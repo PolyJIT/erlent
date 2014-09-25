@@ -365,6 +365,6 @@ int main(int argc, char *argv[])
     waitpid(fuse_pid, &fuse_status, 0);
 
     cleanup();
-
+    sleep(1);
     return child_res;
 }

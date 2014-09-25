@@ -23,13 +23,13 @@ class nullostream : public ostream {
 
 static nullostream dbgnull;
 
-ostream &erlent::dbg() { return std::cerr; }
+ostream &erlent::dbg() { return dbgnull /*std::cerr*/; }
 
 char erlent::getnextchar(istream &is) {
     int c = is.get();
     if (c == EOF) {
         // std::cerr << "End of input." << endl;
-        exit(1);
+        throw EofException();
     }
     return (char)c;
 }
@@ -49,7 +49,7 @@ istream &erlent::readstr(istream &is, string &str) {
     is.read(cstr, len);
     if (is.gcount() != len) {
         fprintf(stderr, "Could not read %d bytes\n", len);
-        exit(1);
+        throw EofException();
     }
     cstr[len] = '\0';
     str = cstr;

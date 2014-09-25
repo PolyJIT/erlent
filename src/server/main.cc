@@ -33,12 +33,12 @@ static void startchild(int argc, char *argv[])
         cerr << "Error creating pipes: " << strerror(err) << endl;
         exit(1);
     }
-    pid_t pid = fork();
-    if (pid == -1) {
+    child_pid = fork();
+    if (child_pid == -1) {
         int err = errno;
         cerr << "Error in fork: " << strerror(err) << endl;
         exit(1);
-    } else if (pid == 0) {
+    } else if (child_pid == 0) {
         close(tochild[1]);
         close(toparent[0]);
         dup2(tochild[0], 0);
@@ -71,20 +71,24 @@ int main(int argc, char *argv[])
     if (argc >= 2)
         startchild(argc-1, argv+1);
 
-    cout << unitbuf;
-    do {
-    } while (processMessage());
+    try {
+        cout << unitbuf;
+        do {
+            cerr << "a" << endl;
+        } while (processMessage());
+    } catch (EofException &e) {
+    }
+
+    cerr << "b" << endl;
 
     int res = 0;
 
     if (child_pid != 0) {
         int status;
         waitpid(child_pid, &status, 0);
-        if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-            cerr << "Error executing " << argv[1]
-                 << ": exit code " << WEXITSTATUS(status) << "."
-                 << endl;
-            res = 1;
+        res = WIFEXITED(status) ? WEXITSTATUS(status) : 127;
+        if (!WIFEXITED(status)) {
+            cerr << "Error executing " << argv[1] << "." << endl;
         }
     }
     return res;

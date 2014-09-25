@@ -15,6 +15,8 @@ extern "C" {
 
 
 namespace erlent {
+    class EofException { };
+
     std::ostream &dbg();
 
     std::ostream &writestr(std::ostream &os, const std::string &str);
