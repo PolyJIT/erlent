@@ -16,69 +16,114 @@ using namespace erlent;
 
 using namespace std;
 
-static const char *hello_str = "Hello World!\n";
-static const char *hello_path = "/hello";
-
-static int hello_getattr(const char *path, struct stat *stbuf) {
+static int erlent_getattr(const char *path, struct stat *stbuf) {
+    dbg() << "erlent_getattr" << endl;
+    /*
     int res = 0;
     memset(stbuf, 0, sizeof(struct stat));
     if (strcmp(path, "/") == 0) {
         stbuf->st_mode = S_IFDIR | 0755;
         stbuf->st_nlink = 2;
-    } else if (strcmp(path, hello_path) == 0) {
+    } else if (strcmp(path, erlent_path) == 0) {
         stbuf->st_mode = S_IFREG | 0444;
         stbuf->st_nlink = 1;
-        stbuf->st_size = strlen(hello_str);
+        stbuf->st_size = strlen(erlent_str);
     } else
         res = -ENOENT;
-    return res;
+        */
+    GetattrReply repl(stbuf);
+    return GetattrRequest(path).process(repl);
 }
     
-static int hello_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
-                         off_t offset, struct fuse_file_info *fi)
+static int erlent_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
+                          off_t offset, struct fuse_file_info *fi)
 {
+    dbg() << "erlent_readdir" << endl;
     ReaddirReply rr;
     (void) offset;
     (void) fi;
 
-    ReaddirRequest(path).process(rr);
-    /*
-    if (strcmp(path, "/") != 0)
-        return -ENOENT;
-    filler(buf, ".", NULL, 0);
-    filler(buf, "..", NULL, 0);
-    filler(buf, hello_path + 1, NULL, 0);
-    */
-    return 0;
+    int res = ReaddirRequest(path).process(rr);
+    if (res == 0) {
+        ReaddirReply::name_iterator end = rr.names_end(), it;
+        for (it=rr.names_begin(); it != end; ++it) {
+            filler(buf, (*it).c_str(), NULL, 0);
+        }
+    }
+
+    return res;
 }
 
-static int hello_open(const char *path, struct fuse_file_info *fi)
+static int erlent_open(const char *path, struct fuse_file_info *fi)
 {
-    /*
-    if (strcmp(path, hello_path) != 0)
-        return -ENOENT;
-    if ((fi->flags & 3) != O_RDONLY)
-        return -EACCES;
-    */
-    return 0;
+    dbg() << "erlent_open for '" << path << "'." << endl;
+    OpenReply repl;
+    return OpenRequest(path, fi->flags, 0).process(repl);
 }
 
-static int hello_read(const char *path, char *buf, size_t size, off_t offset,
-                      struct fuse_file_info *fi)
+static int erlent_read(const char *path, char *buf, size_t size, off_t offset,
+                       struct fuse_file_info *fi)
 {
+    dbg() << "erlent_read" << endl;
     ReadReply rr(buf, size);
     return ReadRequest(path, size, offset).process(rr);
 }
 
-int main(int argc, char *argv[])
+static int erlent_write(const char *path, const char *data, size_t size, off_t offset,
+                        struct fuse_file_info *fi)
 {
-    struct fuse_operations hello_oper;
-    memset(&hello_oper, 0, sizeof(hello_oper));
-    hello_oper.getattr = hello_getattr;
-    hello_oper.readdir = hello_readdir;
-    hello_oper.open = hello_open;
-    hello_oper.read = hello_read;
-
-    return fuse_main(argc, argv, &hello_oper, NULL);
+    dbg() << "erlent_write" << endl;
+    WriteReply repl;
+    return WriteRequest(path, data, size, offset).process(repl);
 }
 
+static int erlent_unlink(const char *path) {
+    dbg() << "erlent_unlink" << endl;
+    UnlinkReply repl;
+    return UnlinkRequest(path).process(repl);
+}
+
+static int erlent_access(const char *path, int perms) {
+    dbg() << "erlent_access" << endl;
+    return -ENOSYS;
+}
+
+static int erlent_truncate(const char *path, off_t size) {
+    dbg() << "erlent_truncate" << endl;
+    TruncateReply repl;
+    return TruncateRequest(path, size).process(repl);
+}
+
+
+static int erlent_create(const char *path , mode_t mode, struct fuse_file_info *fi)
+{
+    dbg() << "erlent_create" << endl;
+    OpenReply repl;
+    return OpenRequest(path, O_CREAT|O_WRONLY|O_TRUNC, mode).process(repl);
+}
+
+static int erlent_flush(const char *path, struct fuse_file_info *fi)
+{
+    return 0;
+}
+
+int main(int argc, char *argv[])
+{
+    dbg() << unitbuf;
+    cout << unitbuf;
+
+    struct fuse_operations erlent_oper;
+    memset(&erlent_oper, 0, sizeof(erlent_oper));
+    erlent_oper.getattr = erlent_getattr;
+    erlent_oper.readdir = erlent_readdir;
+    erlent_oper.open = erlent_open;
+    erlent_oper.read = erlent_read;
+    erlent_oper.write = erlent_write;
+    erlent_oper.create = erlent_create;
+    erlent_oper.unlink = erlent_unlink;
+    erlent_oper.access = erlent_access;
+    erlent_oper.truncate = erlent_truncate;
+    erlent_oper.flush    = erlent_flush;
+
+    return fuse_main(argc, argv, &erlent_oper, NULL);
+}

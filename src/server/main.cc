@@ -18,6 +18,9 @@ bool processMessage() {
 
 int main(int argc, char *argv[])
 {
+    cout << unitbuf;
+    fprintf(stderr, "main\n");
+    cerr << "main" << endl;
     do {
     } while (processMessage());
     return 0;
