@@ -48,7 +48,8 @@ namespace erlent {
 
     class Message {
     public:
-        enum Type { GETATTR, READDIR, READ, WRITE, OPEN, TRUNCATE, UNLINK };
+        enum Type { GETATTR, READDIR, READ, WRITE, OPEN, TRUNCATE, CHMOD,
+                    MKDIR, UNLINK, RMDIR };
     protected:
         Message() { }
     public:
@@ -297,12 +298,45 @@ namespace erlent {
         void perform(std::ostream &os);
     };
 
+    class ChmodReply : public Reply {
+    public:
+        Request::Type getMessageType() const { return Message::CHMOD; }
+    };
+
+    class ChmodRequest : public PathValRequestTempl<Message::CHMOD, mode_t> {
+    public:
+        using PathValRequestTempl::PathValRequestTempl;
+        void perform(std::ostream &os);
+    };
+
+    class MkdirReply : public Reply {
+    public:
+        Request::Type getMessageType() const { return Message::MKDIR; }
+    };
+
+    class MkdirRequest : public PathValRequestTempl<Message::MKDIR, mode_t> {
+    public:
+        using PathValRequestTempl::PathValRequestTempl;
+        void perform(std::ostream &os);
+    };
+
     class UnlinkReply : public Reply {
     public:
         Request::Type getMessageType() const { return Message::UNLINK; }
     };
 
     class UnlinkRequest : public PathRequestTempl<Message::UNLINK> {
+    public:
+        using PathRequestTempl::PathRequestTempl;
+        void perform(std::ostream &os);
+    };
+
+    class RmdirReply : public Reply {
+    public:
+        Request::Type getMessageType() const { return Message::RMDIR; }
+    };
+
+    class RmdirRequest : public PathRequestTempl<Message::RMDIR> {
     public:
         using PathRequestTempl::PathRequestTempl;
         void perform(std::ostream &os);

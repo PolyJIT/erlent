@@ -1,16 +1,20 @@
 #define FUSE_USE_VERSION 30
 extern "C" {
 #include <fuse.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 }
 
 #include "erlent/erlent.hh"
 
 using namespace erlent;
 
-#include <stdio.h>
-#include <string.h>
+#include <cstdio>
+#include <cstring>
+#include <climits>
 #include <errno.h>
 #include <fcntl.h>
+#include <csignal>
 
 #include <vector>
 
@@ -18,19 +22,6 @@ using namespace std;
 
 static int erlent_getattr(const char *path, struct stat *stbuf) {
     dbg() << "erlent_getattr" << endl;
-    /*
-    int res = 0;
-    memset(stbuf, 0, sizeof(struct stat));
-    if (strcmp(path, "/") == 0) {
-        stbuf->st_mode = S_IFDIR | 0755;
-        stbuf->st_nlink = 2;
-    } else if (strcmp(path, erlent_path) == 0) {
-        stbuf->st_mode = S_IFREG | 0444;
-        stbuf->st_nlink = 1;
-        stbuf->st_size = strlen(erlent_str);
-    } else
-        res = -ENOENT;
-        */
     GetattrReply repl(stbuf);
     return GetattrRequest(path).process(repl);
 }
@@ -77,12 +68,6 @@ static int erlent_write(const char *path, const char *data, size_t size, off_t o
     return WriteRequest(path, data, size, offset).process(repl);
 }
 
-static int erlent_unlink(const char *path) {
-    dbg() << "erlent_unlink" << endl;
-    UnlinkReply repl;
-    return UnlinkRequest(path).process(repl);
-}
-
 static int erlent_access(const char *path, int perms) {
     dbg() << "erlent_access" << endl;
     return -ENOSYS;
@@ -92,6 +77,30 @@ static int erlent_truncate(const char *path, off_t size) {
     dbg() << "erlent_truncate" << endl;
     TruncateReply repl;
     return TruncateRequest(path, size).process(repl);
+}
+
+static int erlent_chmod(const char *path, mode_t mode) {
+    dbg() << "erlent_chmod" << endl;
+    ChmodReply repl;
+    return ChmodRequest(path, mode).process(repl);
+}
+
+static int erlent_mkdir(const char *path, mode_t mode) {
+    dbg() << "erlent_mkdir" << endl;
+    MkdirReply repl;
+    return MkdirRequest(path, mode).process(repl);
+}
+
+static int erlent_unlink(const char *path) {
+    dbg() << "erlent_unlink" << endl;
+    UnlinkReply repl;
+    return UnlinkRequest(path).process(repl);
+}
+
+static int erlent_rmdir(const char *path) {
+    dbg() << "erlent_rmdir" << endl;
+    RmdirReply repl;
+    return RmdirRequest(path).process(repl);
 }
 
 
@@ -107,10 +116,221 @@ static int erlent_flush(const char *path, struct fuse_file_info *fi)
     return 0;
 }
 
+
+static char hostname[200];
+
+static void errExit(const char *msg)
+{
+    cerr << hostname << ": " << strerror(errno) << endl;
+    exit(EXIT_FAILURE);
+}
+
+
+int tochild[2], toparent[2];
+
+static void signal_child(char c) {
+    if (write(tochild[1], &c, 1) == -1)
+        errExit("signal_child");
+}
+
+static void signal_parent(char c) {
+    if (write(toparent[1], &c, 1) == -1)
+        errExit("signal_parent");
+}
+
+static void wait_child(char expected) {
+    char c = 0;
+    if (read(toparent[0], &c, 1) == -1)
+        errExit("wait_child");
+    if (c != expected) {
+        cerr << "Communication error in wait_child: expected '" << expected
+             << "', got '" << c << "'." << endl;
+        exit(1);
+    }
+}
+
+static void wait_parent(char expected) {
+    char c = 0;
+    if (read(tochild[0], &c, 1) == -1)
+        errExit("wait_parent");
+    if (c != expected) {
+        cerr << "Communication error in wait_parent: expected '" << expected
+             << "', got '" << c << "'." << endl;
+        exit(1);
+    }
+}
+
+static void *erlent_init(struct fuse_conn_info *conn)
+{
+    signal_child('I');
+    return 0;
+}
+
+char *newroot;
+char *newwd;
+char **args;
+
+static int childFunc(void *arg)
+{
+    wait_parent('I');
+
+    dbg() << "newwd = " << newwd << endl;
+    dbg() << "newroot = " << newroot << endl;
+    for (char **p=args; *p; ++p) {
+        dbg() << " " << *p << endl;
+    }
+
+    if (chroot(newroot) == -1) {
+        int err = errno;
+        cerr << "chroot failed: " << strerror(err) << endl;
+    }
+
+    if (chdir(newwd) == -1) {
+        int err = errno;
+        cerr << "chdir failed: " << strerror(err) << endl;
+    }
+
+    if (dup2(2, 1) == -1) {
+        int err = errno;
+        cerr << "dup2 failed: " << strerror(err) << endl;
+    }
+
+    execv(args[0], args);
+    return 127;
+}
+
+static void initComm() {
+    if (pipe(tochild) == -1)
+        errExit("pipe/tochild");
+    if (pipe(toparent) == -1)
+        errExit("pipe/toparent");
+}
+
+
+static void cleanup()
+{
+    int res, err;
+    do {
+        res = rmdir(newroot);
+        err = errno;
+        if (res == -1) {
+            if (err == EBUSY)
+                usleep(10000);
+            else
+                cerr << "Could not remove '" << newroot << "': " << strerror(err) << "." << endl;
+        }
+    } while (res == -1 && err == EBUSY);
+}
+
+static pid_t child_pid, fuse_pid;
+static int child_res;
+
+extern "C"
+void sigchld_action(int signum, siginfo_t *si, void *ctx)
+{
+    int status;
+    dbg() << "sigchld_action" << endl;
+    waitpid(si->si_pid, &status, 0);
+
+    if (si->si_pid != child_pid)
+        return;
+
+    child_res = WIFEXITED(status) ? WEXITSTATUS(status) : 127;
+
+    kill(fuse_pid, SIGTERM);
+}
+
+static void usage(const char *progname)
+{
+    cerr << "USAGE: " << progname << " [-w DIR] [-h] CMD ARGS..." << endl
+         << "   -w DIR       change working directory to DIR" << endl
+         << "   -h           print this help" << endl
+         << "   CMD ARGS...  command to execute and its arguments" << endl;
+}
+
 int main(int argc, char *argv[])
 {
+    int opt, usercmd;
+
     dbg() << unitbuf;
     cout << unitbuf;
+
+    char cwd[PATH_MAX];
+    newwd = getcwd(cwd, sizeof(cwd));
+
+    while ((opt = getopt(argc, argv, "+w:h")) != -1) {
+        switch(opt) {
+        case 'w': newwd = optarg; break;
+        case 'h': usage(argv[0]); return 0;
+        default:
+            usage(argv[0]); return 1;
+        }
+    }
+    usercmd = optind;
+    if (usercmd >= argc) {
+        // no command is given
+        usage(argv[0]);
+        return 1;
+    }
+
+    int n_args = argc - usercmd;
+    args = new char* [n_args+1];
+    for (int i=0; i<n_args; ++i)
+        args[i] = argv[i+usercmd];
+    args[n_args] = 0;
+
+    char newroottempl[] = "/tmp/newroot.XXXXXX";
+    int fd;
+
+    gethostname(hostname, sizeof(hostname));
+
+    newroot = mkdtemp(newroottempl);
+    if (newroot == NULL)
+        errExit("mkdtemp");
+    dbg() << "Running on " << hostname << ", temp dir: " << newroot << endl;
+
+    struct sigaction sact;
+    memset(&sact, 0, sizeof(sact));
+    sact.sa_sigaction = sigchld_action;
+    sact.sa_flags = SA_NOCLDSTOP | SA_SIGINFO;
+    if (sigaction(SIGCLD, &sact, 0) == -1)
+        errExit("sigaction");
+
+    initComm();
+
+    child_res = 127;
+    child_pid = fork();
+    if (child_pid == -1)
+        errExit("fork");
+    else if (child_pid == 0) {
+        close(toparent[0]);
+        close(tochild[1]);
+        unshare(CLONE_NEWUSER);
+        signal_parent('U');
+        childFunc(0);
+    }
+    close(toparent[1]);
+    close(tochild[0]);
+    wait_child('U');
+
+    char str[200];
+    sprintf(str, "/proc/%d/uid_map", child_pid);
+    fd = open(str, O_WRONLY);
+    if (fd == -1)
+        errExit("open");
+    sprintf(str,"0 %ld 1\n", (long)geteuid());
+    if (write(fd, str, strlen(str)) == -1)
+        errExit("write");
+    close(fd);
+
+    sprintf(str, "/proc/%d/gid_map", child_pid);
+    fd = open(str, O_WRONLY);
+    if (fd == -1)
+        errExit("open");
+    sprintf(str,"0 %ld 1\n", (long)getegid());
+    if (write(fd, str, strlen(str)) == -1)
+        errExit("write");
+    close(fd);
 
     struct fuse_operations erlent_oper;
     memset(&erlent_oper, 0, sizeof(erlent_oper));
@@ -120,10 +340,31 @@ int main(int argc, char *argv[])
     erlent_oper.read = erlent_read;
     erlent_oper.write = erlent_write;
     erlent_oper.create = erlent_create;
-    erlent_oper.unlink = erlent_unlink;
     erlent_oper.access = erlent_access;
     erlent_oper.truncate = erlent_truncate;
+    erlent_oper.chmod    = erlent_chmod;
+    erlent_oper.mkdir    = erlent_mkdir;
+    erlent_oper.unlink   = erlent_unlink;
+    erlent_oper.rmdir    = erlent_rmdir;
     erlent_oper.flush    = erlent_flush;
+    erlent_oper.init     = erlent_init;
 
-    return fuse_main(argc, argv, &erlent_oper, NULL);
+    fuse_pid = fork();
+    if (fuse_pid == -1)
+        errExit("fork/fuse");
+    else if (fuse_pid == 0) {
+        char *fuse_args[] = {
+            argv[0], strdup("-f"), strdup("-s"),
+            strdup("-o"), strdup("auto_unmount"), newroot
+        };
+        int fuse_argc = sizeof(fuse_args)/sizeof(*fuse_args);
+        exit(fuse_main(fuse_argc, fuse_args, &erlent_oper, NULL));
+    }
+
+    int fuse_status;
+    waitpid(fuse_pid, &fuse_status, 0);
+
+    cleanup();
+
+    return child_res;
 }

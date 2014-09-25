@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 2.6)
 
 project(erlent)
 
-#add_definitions(-D_POSIX_C_SOURCE=200809L)
+add_definitions(-D_POSIX_C_SOURCE=200809L)
 add_definitions(-D_FILE_OFFSET_BITS=64)
 
 set(CMAKE_CXX_FLAGS "-g -std=c++11 -pedantic -Wall -O")

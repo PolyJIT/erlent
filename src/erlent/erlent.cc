@@ -18,12 +18,17 @@ extern "C" {
 using namespace std;
 using namespace erlent;
 
+class nullostream : public ostream {
+};
+
+static nullostream dbgnull;
+
 ostream &erlent::dbg() { return std::cerr; }
 
 char erlent::getnextchar(istream &is) {
     int c = is.get();
     if (c == EOF) {
-        std::cerr << "End of input." << endl;
+        // std::cerr << "End of input." << endl;
         exit(1);
     }
     return (char)c;
@@ -60,7 +65,10 @@ string Message::typeName(Message::Type ty)
     case WRITE:   return "Write";
     case OPEN:    return "Open";
     case TRUNCATE: return "Truncate";
+    case CHMOD:    return "Chmod";
+    case MKDIR:    return "Mkdir";
     case UNLINK:   return "Unlink";
+    case RMDIR:    return "Rmdir";
     }
     return "(unknown, missing in Message::typeName)";
 }
@@ -76,21 +84,16 @@ Request *Request::receive(istream &is)
 
     dbg() << "receive: msgtype=" << msgtype << endl;
     switch(msgtype) {
-    case GETATTR: req = new GetattrRequest(); break;
-    case READDIR:
-        req = new ReaddirRequest();
-        break;
-    case READ:
-        req = new ReadRequest();
-        break;
-    case WRITE:
-        req = new WriteRequest();
-        break;
-    case OPEN:
-        req = new OpenRequest();
-        break;
+    case GETATTR:  req = new GetattrRequest();  break;
+    case READDIR:  req = new ReaddirRequest();  break;
+    case READ:     req = new ReadRequest();     break;
+    case WRITE:    req = new WriteRequest();    break;
+    case OPEN:     req = new OpenRequest();     break;
     case TRUNCATE: req = new TruncateRequest(); break;
+    case CHMOD:    req = new ChmodRequest();    break;
+    case MKDIR:    req = new MkdirRequest();    break;
     case UNLINK:   req = new UnlinkRequest();   break;
+    case RMDIR:    req = new RmdirRequest();    break;
     }
 
     // We do not use a default: case since GCC generates
@@ -141,6 +144,7 @@ int Request::process(Reply &repl) const
     istream &is = cin;
 
     serialize(os);
+    os.flush();
     repl.receive(is);
 
     return repl.getResult();
@@ -440,6 +444,25 @@ void TruncateRequest::perform(ostream &os)
     repl.serialize(os);
 }
 
+void ChmodRequest::perform(ostream &os)
+{
+    int res = chmod(filename.c_str(), val);
+    if (res < 0)
+        res = -errno;
+    ChmodReply repl;
+    repl.setResult(res);
+    repl.serialize(os);
+}
+
+void MkdirRequest::perform(ostream &os)
+{
+    int res = mkdir(filename.c_str(), val);
+    if (res < 0)
+        res = -errno;
+    MkdirReply repl;
+    repl.setResult(res);
+    repl.serialize(os);
+}
 
 void UnlinkRequest::perform(ostream &os)
 {
@@ -447,6 +470,17 @@ void UnlinkRequest::perform(ostream &os)
     if (res < 0)
         res = -errno;
     UnlinkReply repl;
+    repl.setResult(res);
+    repl.serialize(os);
+}
+
+
+void RmdirRequest::perform(ostream &os)
+{
+    int res = rmdir(filename.c_str());
+    if (res < 0)
+        res = -errno;
+    RmdirReply repl;
     repl.setResult(res);
     repl.serialize(os);
 }
