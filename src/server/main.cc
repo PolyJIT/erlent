@@ -74,12 +74,9 @@ int main(int argc, char *argv[])
     try {
         cout << unitbuf;
         do {
-            cerr << "a" << endl;
         } while (processMessage());
     } catch (EofException &e) {
     }
-
-    cerr << "b" << endl;
 
     int res = 0;
 
