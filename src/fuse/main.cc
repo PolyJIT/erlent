@@ -209,17 +209,41 @@ static void initComm() {
 
 static void cleanup()
 {
+    // Wait for all remaining child processes (fuse may have
+    // started "fusermount -u -z" or similar).
+    pid_t pid;
+    int status;
+    while ((pid = wait(&status)) != -1) {
+    }
+    // When there are no more child processes, errno is set
+    // to ECHILD.
+    if (errno != ECHILD) {
+        int err = errno;
+        cerr << "Error in wait: " << strerror(err) << "endl";
+    }
+
+    // Remove the temporary directory for the
+    // new root. The directory should not be in use
+    // (we have waited for child processes, e.g. fusermount,
+    // for this reason) but, to be on the safe side,
+    // check if EBUSY is returned and retry after a short
+    // delay in this case.
     int res, err;
+    int tries = 10;
     do {
         res = rmdir(newroot);
         err = errno;
         if (res == -1) {
-            if (err == EBUSY)
+            --tries;
+            if (err == EBUSY && tries > 0) {
                 usleep(10000);
-            else
+            } else {
                 cerr << "Could not remove '" << newroot << "': " << strerror(err) << "." << endl;
-        }
-    } while (res == -1 && err == EBUSY);
+                tries = 0;
+            }
+        } else
+            tries = 0;
+    } while (tries > 0);
 }
 
 static pid_t child_pid, fuse_pid;
@@ -365,6 +389,6 @@ int main(int argc, char *argv[])
     waitpid(fuse_pid, &fuse_status, 0);
 
     cleanup();
-    sleep(1);
+
     return child_res;
 }
