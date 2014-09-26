@@ -54,10 +54,11 @@ namespace erlent {
                     MKDIR, UNLINK, RMDIR };
     protected:
         Message() { }
+        virtual ~Message() { }
     public:
         virtual Type getMessageType() const = 0;
-        virtual std::ostream &serialize(std::ostream &os) const = 0;
-        virtual std::istream &deserialize(std::istream &is) = 0;
+        virtual void serialize(std::ostream &os) const = 0;
+        virtual void deserialize(std::istream &is) = 0;
 
         static std::string typeName(Type ty);
     };
@@ -70,8 +71,8 @@ namespace erlent {
         int process(Reply &repl) const;
         virtual void perform(std::ostream &os) = 0;
 
-        std::ostream &serialize(std::ostream &os) const;
-        std::istream &deserialize(std::istream &is);
+        void serialize(std::ostream &os) const;
+        void deserialize(std::istream &is);
     };
 
     class Reply : public Message {
@@ -84,31 +85,52 @@ namespace erlent {
         }
         void setResult(int res) { result = res; }
 
-        std::ostream &serialize(std::ostream &os) const;
-        std::istream &deserialize(std::istream &is);
+        void serialize(std::ostream &os) const;
+        void deserialize(std::istream &is);
     };
+
+    template<enum Message::Type MsgType>
+    class RequestWithPathname : public Request {
+        std::string pathname;
+    public:
+        RequestWithPathname() { }
+        RequestWithPathname(const char *pathname)
+            : pathname(pathname) { }
+        const std::string &getPathname() const { return pathname; }
+        void setPathname(const char *pathname) {
+            this->pathname = pathname;
+        }
+
+        void serialize(std::ostream &os) const {
+            this->Request::serialize(os);
+            writestr(os, pathname);
+        }
+        void deserialize(std::istream &is) {
+            this->Request::deserialize(is);
+            readstr(is, pathname);
+        }
+
+        virtual void perform(std::ostream &os) = 0;
+
+        Message::Type getMessageType() const { return MsgType; }
+    };
+
 
     class GetattrReply : public Reply {
         struct stat *stbuf;
     public:
         GetattrReply(struct stat *stbuf) : stbuf(stbuf) { }
 
-        std::ostream &serialize(std::ostream &os) const;
-        std::istream &deserialize(std::istream &is);
+        void serialize(std::ostream &os) const;
+        void deserialize(std::istream &is);
 
         Request::Type getMessageType() const { return Message::GETATTR; }
     };
 
-    class GetattrRequest : public Request {
-        std::string pathname;
+    class GetattrRequest : public RequestWithPathname<Message::GETATTR> {
     public:
-        explicit GetattrRequest() { }
-        GetattrRequest(const char *pathname) : pathname(pathname) { }
+        using RequestWithPathname::RequestWithPathname;
 
-        std::ostream &serialize(std::ostream &os) const;
-        std::istream &deserialize(std::istream &is);
-
-        Request::Type getMessageType() const { return Message::GETATTR; }
         void perform(std::ostream &os);
     };
 
@@ -119,8 +141,8 @@ namespace erlent {
 
         ReaddirReply() : Reply() { }
 
-        std::ostream &serialize(std::ostream &os) const;
-        std::istream &deserialize(std::istream &is);
+        void serialize(std::ostream &os) const;
+        void deserialize(std::istream &is);
 
         Request::Type getMessageType() const { return Message::READDIR; }
 
@@ -130,17 +152,10 @@ namespace erlent {
         name_iterator names_end()   const { return names.end();   }
     };
 
-    class ReaddirRequest : public Request {
-        std::string pathname;
+    class ReaddirRequest : public RequestWithPathname<Message::READDIR> {
     public:
-        explicit ReaddirRequest() { }
-        ReaddirRequest(const char *pathname)
-            : pathname(pathname) { }
+        using RequestWithPathname::RequestWithPathname;
 
-        std::ostream &serialize(std::ostream &os) const;
-        std::istream &deserialize(std::istream &is);
-
-        Request::Type getMessageType() const { return Message::READDIR; }
         void perform(std::ostream &os);
     };
 
@@ -151,27 +166,23 @@ namespace erlent {
         ReadReply(char *data, ssize_t len)
             : Reply(), data(data), len(len) { }
 
-        std::ostream &serialize(std::ostream &os) const;
-        std::istream &deserialize(std::istream &is);
+        void serialize(std::ostream &os) const;
+        void deserialize(std::istream &is);
 
         Request::Type getMessageType() const { return Message::READ; }
     };
 
-    class ReadRequest : public Request {
-        std::string filename;
+    class ReadRequest : public RequestWithPathname<Message::READ> {
         size_t size;
         off_t offset;
-
     public:
-        explicit ReadRequest() { }
+        ReadRequest() { }
 
-        ReadRequest(const char *filename, size_t size, off_t offset)
-            : Request(), filename(filename), size(size), offset(offset) { }
+        ReadRequest(const char *pathname, size_t size, off_t offset)
+            : RequestWithPathname(pathname), size(size), offset(offset) { }
 
-        std::ostream &serialize(std::ostream &os) const;
-        std::istream &deserialize(std::istream &is);
-
-        Request::Type getMessageType() const { return Request::READ; }
+        void serialize(std::ostream &os) const;
+        void deserialize(std::istream &is);
 
         void perform(std::ostream &os);
     };
@@ -180,33 +191,29 @@ namespace erlent {
     public:
         WriteReply() { }
 
-        std::ostream &serialize(std::ostream &os) const;
-        std::istream &deserialize(std::istream &is);
+        void serialize(std::ostream &os) const;
+        void deserialize(std::istream &is);
 
         Request::Type getMessageType() const { return Message::WRITE; }
     };
 
-    class WriteRequest : public Request {
-        std::string filename;
+    class WriteRequest : public RequestWithPathname<Message::WRITE> {
         const char *data;
         size_t size;
         off_t offset;
         bool del_data;
     public:
-        explicit WriteRequest() { }
-
-        WriteRequest(const char *filename, const char *data, size_t size, off_t offset)
-            : Request(), filename(filename), data(data), size(size), offset(offset), del_data(false) { }
+        WriteRequest() { }
+        WriteRequest(const char *pathname, const char *data, size_t size, off_t offset)
+            : RequestWithPathname(pathname), data(data), size(size), offset(offset), del_data(false) { }
 
         ~WriteRequest() {
             if (del_data)
                 delete data;
         }
 
-        std::ostream &serialize(std::ostream &os) const;
-        std::istream &deserialize(std::istream &is);
-
-        Request::Type getMessageType() const { return Request::WRITE; }
+        void serialize(std::ostream &os) const;
+        void deserialize(std::istream &is);
 
         void perform(std::ostream &os);
     };
@@ -216,87 +223,50 @@ namespace erlent {
         Request::Type getMessageType() const { return Message::OPEN; }
     };
 
-    class OpenRequest : public Request {
-        std::string filename;
+    class OpenRequest : public RequestWithPathname<Message::OPEN> {
         int flags;
         mode_t mode;
     public:
         OpenRequest() { }
-        OpenRequest(const char *filename, int flags, mode_t mode)
-            : filename(filename), flags(flags), mode(mode) { }
+        OpenRequest(const char *pathname, int flags, mode_t mode)
+            : RequestWithPathname(pathname), flags(flags), mode(mode) { }
 
-        std::ostream &serialize(std::ostream &os) const;
-        std::istream &deserialize(std::istream &is);
-
-        Request::Type getMessageType() const { return Request::OPEN; }
+        void serialize(std::ostream &os) const;
+        void deserialize(std::istream &is);
 
         void perform(std::ostream &os);
     };
 
-    template<Message::Type MSGTYPE, typename VALTY>
-    class PathValRequestTempl : public Request {
+    template<Message::Type MsgType, typename VALTY>
+    class RequestWithPathVal : public RequestWithPathname<MsgType> {
     protected:
-        std::string filename;
         VALTY val;
     public:
-        PathValRequestTempl() { }
-        PathValRequestTempl(const char *filename, VALTY val)
-            : filename(filename), val(val) { }
+        RequestWithPathVal() { }
+        RequestWithPathVal(const char *pathname, VALTY val)
+            : RequestWithPathname<MsgType>(pathname), val(val) { }
 
-        std::ostream &serialize(std::ostream &os) const {
-            this->Request::serialize(os);
-            writestr(os, filename);
+        void serialize(std::ostream &os) const {
+            this->RequestWithPathname<MsgType>::serialize(os);
             writenum(os, val);
-            return os;
         }
 
-        std::istream &deserialize(std::istream &is) {
-            this->Request::deserialize(is);
-            readstr(is, filename);
+        void deserialize(std::istream &is) {
+            this->RequestWithPathname<MsgType>::deserialize(is);
             readnum(is, val);
-            return is;
         }
-
-        Request::Type getMessageType() const { return MSGTYPE; }
 
         virtual void perform(std::ostream &os) = 0;
     };
-
-    template<Message::Type MSGTYPE>
-    class PathRequestTempl : public Request {
-    protected:
-        std::string filename;
-    public:
-        PathRequestTempl() { }
-        PathRequestTempl(const char *filename)
-            : filename(filename) { }
-
-        std::ostream &serialize(std::ostream &os) const {
-            this->Request::serialize(os);
-            writestr(os, filename);
-            return os;
-        }
-
-        std::istream &deserialize(std::istream &is) {
-            this->Request::deserialize(is);
-            readstr(is, filename);
-            return is;
-        }
-
-        Request::Type getMessageType() const { return MSGTYPE; }
-
-        virtual void perform(std::ostream &os) = 0;
-    };
-
 
     class TruncateReply : public Reply {
     public:
         Request::Type getMessageType() const { return Message::TRUNCATE; }
     };
 
-    class TruncateRequest : public PathValRequestTempl<Message::TRUNCATE, off_t> {
+    class TruncateRequest : public RequestWithPathVal<Message::TRUNCATE, off_t> {
     public:
-        using PathValRequestTempl::PathValRequestTempl;
+        using RequestWithPathVal::RequestWithPathVal;
         void perform(std::ostream &os);
     };
 
@@ -305,9 +275,9 @@ namespace erlent {
         Request::Type getMessageType() const { return Message::CHMOD; }
     };
 
-    class ChmodRequest : public PathValRequestTempl<Message::CHMOD, mode_t> {
+    class ChmodRequest : public RequestWithPathVal<Message::CHMOD, mode_t> {
     public:
-        using PathValRequestTempl::PathValRequestTempl;
+        using RequestWithPathVal::RequestWithPathVal;
         void perform(std::ostream &os);
     };
 
@@ -316,9 +286,9 @@ namespace erlent {
         Request::Type getMessageType() const { return Message::MKDIR; }
     };
 
-    class MkdirRequest : public PathValRequestTempl<Message::MKDIR, mode_t> {
+    class MkdirRequest : public RequestWithPathVal<Message::MKDIR, mode_t> {
     public:
-        using PathValRequestTempl::PathValRequestTempl;
+        using RequestWithPathVal::RequestWithPathVal;
         void perform(std::ostream &os);
     };
 
@@ -327,9 +297,9 @@ namespace erlent {
         Request::Type getMessageType() const { return Message::UNLINK; }
     };
 
-    class UnlinkRequest : public PathRequestTempl<Message::UNLINK> {
+    class UnlinkRequest : public RequestWithPathname<Message::UNLINK> {
     public:
-        using PathRequestTempl::PathRequestTempl;
+        using RequestWithPathname::RequestWithPathname;
         void perform(std::ostream &os);
     };
 
@@ -338,9 +308,9 @@ namespace erlent {
         Request::Type getMessageType() const { return Message::RMDIR; }
     };
 
-    class RmdirRequest : public PathRequestTempl<Message::RMDIR> {
+    class RmdirRequest : public RequestWithPathname<Message::RMDIR> {
     public:
-        using PathRequestTempl::PathRequestTempl;
+        using RequestWithPathname<Message::RMDIR>::RequestWithPathname;
         void perform(std::ostream &os);
     };
 }

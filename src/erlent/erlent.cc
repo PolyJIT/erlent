@@ -122,20 +122,18 @@ void Reply::receive(istream &is)
     deserialize(is);
 }
 
-ostream &Reply::serialize(ostream &os) const
+void Reply::serialize(ostream &os) const
 {
     dbg() << "Serializing " << typeName(getMessageType()) << " reply, result is "
           << getResult() << " (" << getResultMessage() << ")." << endl;
     writenum(os, getMessageType());
     writenum(os, getResult());
-    return os;
 }
 
-istream &Reply::deserialize(istream &is)
+void Reply::deserialize(istream &is)
 {
     dbg() << "Deserializing " << typeName(getMessageType()) << " reply." << endl;
     readnum(is, result);
-    return is;
 }
 
 int Request::process(Reply &repl) const
@@ -150,31 +148,15 @@ int Request::process(Reply &repl) const
     return repl.getResult();
 }
 
-ostream &Request::serialize(ostream &os) const
+void Request::serialize(ostream &os) const
 {
     dbg() << "Serializing " << typeName(getMessageType()) << " request." << endl;
     writenum(os, getMessageType());
-    return os;
 }
 
-istream &Request::deserialize(istream &is)
+void Request::deserialize(istream &is)
 {
     dbg() << "Deserializing " << typeName(getMessageType()) << " request." << endl;
-    return is;
-}
-
-ostream &ReaddirRequest::serialize(ostream &os) const
-{
-    this->Request::serialize(os);
-    writestr(os, pathname);
-    return os;
-}
-
-istream &ReaddirRequest::deserialize(istream &is)
-{
-    this->Request::deserialize(is);
-    readstr(is, pathname);
-    return is;
 }
 
 void ReaddirRequest::perform(ostream &os)
@@ -183,7 +165,7 @@ void ReaddirRequest::perform(ostream &os)
     ReaddirReply rr;
 
     DIR *dir;
-    dir = opendir(pathname.c_str());
+    dir = opendir(getPathname().c_str());
     if (dir != NULL) {
         errno = 0;
         struct dirent *de = readdir(dir);
@@ -202,7 +184,7 @@ void ReaddirRequest::perform(ostream &os)
 }
 
 
-ostream &ReaddirReply::serialize(ostream &os) const
+void ReaddirReply::serialize(ostream &os) const
 {
     this->Reply::serialize(os);
     writenum(os, names.size());
@@ -211,10 +193,9 @@ ostream &ReaddirReply::serialize(ostream &os) const
     for (it=names.begin(); it!=end; ++it) {
         writestr(os, *it);
     }
-    return os;
 }
 
-istream &ReaddirReply::deserialize(istream &is)
+void ReaddirReply::deserialize(istream &is)
 {
     this->Reply::deserialize(is);
     int n;
@@ -224,29 +205,15 @@ istream &ReaddirReply::deserialize(istream &is)
         readstr(is, str);
         names.push_back(str);
     }
-    return is;
 }
 
-
-ostream &GetattrRequest::serialize(ostream &os) const
-{
-    this->Request::serialize(os);
-    writestr(os, pathname);
-    return os;
-}
-
-istream &GetattrRequest::deserialize(istream &is)
-{
-    this->Request::deserialize(is);
-    readstr(is, pathname);
-    return is;
-}
 
 void GetattrRequest::perform(ostream &os)
 {
     int res;
     struct stat stbuf;
     GetattrReply repl(&stbuf);
+    const string &pathname = getPathname();
     dbg() << "stating '" << pathname << "'." << endl;
     res = stat(pathname.c_str(), &stbuf);
     if (res == -1)
@@ -257,7 +224,7 @@ void GetattrRequest::perform(ostream &os)
 }
 
 
-ostream &GetattrReply::serialize(ostream &os) const
+void GetattrReply::serialize(ostream &os) const
 {
     this->Reply::serialize(os);
     writenum(os, stbuf->st_mode);
@@ -269,10 +236,9 @@ ostream &GetattrReply::serialize(ostream &os) const
     writenum(os, stbuf->st_atime);
     writenum(os, stbuf->st_mtime);
     writenum(os, stbuf->st_ctime);
-    return os;
 }
 
-istream &GetattrReply::deserialize(istream &is)
+void GetattrReply::deserialize(istream &is)
 {
     this->Reply::deserialize(is);
     readnum(is, stbuf->st_mode);
@@ -284,24 +250,19 @@ istream &GetattrReply::deserialize(istream &is)
     readnum(is, stbuf->st_atime);
     readnum(is, stbuf->st_mtime);
     readnum(is, stbuf->st_ctime);
-    return is;
 }
 
-ostream &ReadRequest::serialize(ostream &os) const
+void ReadRequest::serialize(ostream &os) const
 {
-    Request::serialize(os);
-    writestr(os, filename);
+    this->RequestWithPathname::serialize(os);
     writenum(os, size);
     writenum(os, offset);
-    return os;
 }
 
-istream &ReadRequest::deserialize(istream &is) {
-    this->Request::deserialize(is);
-    readstr(is, filename);
+void ReadRequest::deserialize(istream &is) {
+    this->RequestWithPathname::deserialize(is);
     readnum(is, size);
     readnum(is, offset);
-    return is;
 }
 
 void ReadRequest::perform(ostream &os)
@@ -309,7 +270,7 @@ void ReadRequest::perform(ostream &os)
     int res = 0;
     char *data = new char[size];
     if (data) {
-        int fd = open(filename.c_str(), O_RDONLY);
+        int fd = open(getPathname().c_str(), O_RDONLY);
         if (fd != -1) {
             if (lseek(fd, offset, SEEK_SET) != -1) {
                 res = read(fd, data, size);
@@ -330,51 +291,45 @@ void ReadRequest::perform(ostream &os)
     delete[] data;
 }
 
-ostream &ReadReply::serialize(ostream &os) const
+void ReadReply::serialize(ostream &os) const
 {
     this->Reply::serialize(os);
     if (getResult() > 0)
         os.write(data, getResult());
-    return os;
 }
 
-istream &ReadReply::deserialize(istream &is)
+void ReadReply::deserialize(istream &is)
 {
     dbg() << "deserializing ReadReply" << endl;
     this->Reply::deserialize(is);
     if (getResult() > 0)
         is.read(data, getResult());
-    return is;
 }
 
 
-ostream &WriteRequest::serialize(ostream &os) const
+void WriteRequest::serialize(ostream &os) const
 {
-    this->Request::serialize(os);
-    writestr(os, filename);
+    this->RequestWithPathname<Message::WRITE>::serialize(os);
     writenum(os, size);
     writenum(os, offset);
     os.write(data, size);
-    return os;
 }
 
-istream &WriteRequest::deserialize(istream &is)
+void WriteRequest::deserialize(istream &is)
 {
-    this->Request::deserialize(is);
-    readstr(is, filename);
+    this->RequestWithPathname<Message::WRITE>::deserialize(is);
     readnum(is, size);
     readnum(is, offset);
     char *datap = new char[size];
     is.read(datap, size);
     data = datap;
     del_data = true;
-    return is;
 }
 
 void WriteRequest::perform(ostream &os)
 {
     int res = 0;
-    int fd = open(filename.c_str(), O_WRONLY);
+    int fd = open(getPathname().c_str(), O_WRONLY);
     if (fd != -1) {
         if (lseek(fd, offset, SEEK_SET) != -1) {
             res = write(fd, data, size);
@@ -391,40 +346,34 @@ void WriteRequest::perform(ostream &os)
     repl.serialize(os);
 }
 
-ostream &WriteReply::serialize(ostream &os) const
+void WriteReply::serialize(ostream &os) const
 {
     this->Reply::serialize(os);
-    return os;
 }
 
-istream &WriteReply::deserialize(istream &is)
+void WriteReply::deserialize(istream &is)
 {
     this->Reply::deserialize(is);
-    return is;
 }
 
-ostream &OpenRequest::serialize(ostream &os) const
+void OpenRequest::serialize(ostream &os) const
 {
-    this->Request::serialize(os);
-    writestr(os, filename);
+    this->RequestWithPathname<Message::OPEN>::serialize(os);
     writenum(os, flags);
     writenum(os, mode);
-    return os;
 }
 
-istream &OpenRequest::deserialize(istream &is)
+void OpenRequest::deserialize(istream &is)
 {
-    this->Request::deserialize(is);
-    readstr(is, filename);
+    this->RequestWithPathname<Message::OPEN>::deserialize(is);
     readnum(is, flags);
     readnum(is, mode);
-    return is;
 }
 
 void OpenRequest::perform(ostream &os)
 {
     int res = 0;
-    int fd = open(filename.c_str(), flags, mode);
+    int fd = open(getPathname().c_str(), flags, mode);
     if (fd < 0)
         res = -errno;
     else
@@ -436,7 +385,7 @@ void OpenRequest::perform(ostream &os)
 
 void TruncateRequest::perform(ostream &os)
 {
-    int res = truncate(filename.c_str(), val);
+    int res = truncate(getPathname().c_str(), val);
     if (res < 0)
         res = -errno;
     TruncateReply repl;
@@ -446,7 +395,7 @@ void TruncateRequest::perform(ostream &os)
 
 void ChmodRequest::perform(ostream &os)
 {
-    int res = chmod(filename.c_str(), val);
+    int res = chmod(getPathname().c_str(), val);
     if (res < 0)
         res = -errno;
     ChmodReply repl;
@@ -456,7 +405,7 @@ void ChmodRequest::perform(ostream &os)
 
 void MkdirRequest::perform(ostream &os)
 {
-    int res = mkdir(filename.c_str(), val);
+    int res = mkdir(getPathname().c_str(), val);
     if (res < 0)
         res = -errno;
     MkdirReply repl;
@@ -466,7 +415,7 @@ void MkdirRequest::perform(ostream &os)
 
 void UnlinkRequest::perform(ostream &os)
 {
-    int res = unlink(filename.c_str());
+    int res = unlink(getPathname().c_str());
     if (res < 0)
         res = -errno;
     UnlinkReply repl;
@@ -477,7 +426,7 @@ void UnlinkRequest::perform(ostream &os)
 
 void RmdirRequest::perform(ostream &os)
 {
-    int res = rmdir(filename.c_str());
+    int res = rmdir(getPathname().c_str());
     if (res < 0)
         res = -errno;
     RmdirReply repl;
