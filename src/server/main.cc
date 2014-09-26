@@ -51,7 +51,9 @@ static void startchild(int argc, char *argv[])
             args[i] = argv[i];
         args[argc] = 0;
 
-        execv(args[0], args);
+        execvp(args[0], args);
+        int err = errno;
+        cerr << "Could not execute '" << argv[0] << "': " << strerror(err) << endl;
         exit(127);
     }
 

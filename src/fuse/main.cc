@@ -195,7 +195,9 @@ static int childFunc(void *arg)
         cerr << "dup2 failed: " << strerror(err) << endl;
     }
 
-    execv(args[0], args);
+    execvp(args[0], args);
+    int err = errno;
+    cerr << "Could not execute '" << args[0] << "': " << strerror(err) << endl;
     return 127;
 }
 
