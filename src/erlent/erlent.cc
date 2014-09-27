@@ -136,16 +136,27 @@ void Reply::deserialize(istream &is)
     readnum(is, result);
 }
 
-int Request::process(Reply &repl) const
+int Request::process()
 {
     ostream &os = cout;
     istream &is = cin;
+    Reply &repl = getReply();
 
-    serialize(os);
-    os.flush();
-    repl.receive(is);
+    if (doLocally()) {
+        performLocally();
+    } else {
+        serialize(os);
+        os.flush();
+        repl.receive(is);
+    }
 
     return repl.getResult();
+}
+
+void Request::perform(ostream &os)
+{
+    performLocally();
+    getReply().serialize(os);
 }
 
 void Request::serialize(ostream &os) const
@@ -159,11 +170,15 @@ void Request::deserialize(istream &is)
     dbg() << "Deserializing " << typeName(getMessageType()) << " request." << endl;
 }
 
-void ReaddirRequest::perform(ostream &os)
+bool Request::isPathnameForLocalOperation(const string &pathname)
 {
-    int res;
-    ReaddirReply rr;
+    return pathname.find("/tmp/") == 0 || pathname == "/tmp";
+}
 
+void ReaddirRequest::performLocally()
+{
+    ReaddirReply &rr = getReply();
+    int res;
     DIR *dir;
     dir = opendir(getPathname().c_str());
     if (dir != NULL) {
@@ -180,7 +195,6 @@ void ReaddirRequest::perform(ostream &os)
         res = -errno;
 
     rr.setResult(res);
-    rr.serialize(os);
 }
 
 
@@ -210,17 +224,23 @@ void ReaddirReply::deserialize(istream &is)
 
 void GetattrRequest::perform(ostream &os)
 {
-    int res;
     struct stat stbuf;
-    GetattrReply repl(&stbuf);
+    GetattrReply &repl = getReply();
+    repl.init(&stbuf);
+    performLocally();
+    repl.serialize(os);
+}
+
+void GetattrRequest::performLocally()
+{
+    GetattrReply &repl = getReply();
     const string &pathname = getPathname();
     dbg() << "stating '" << pathname << "'." << endl;
-    res = stat(pathname.c_str(), &stbuf);
+    int res = stat(pathname.c_str(), repl.getStbuf());
     if (res == -1)
         res = -errno;
     dbg() << "result is " << strerror(-res) << endl;
     repl.setResult(res);
-    repl.serialize(os);
 }
 
 
@@ -263,32 +283,39 @@ void ReadRequest::deserialize(istream &is) {
     this->RequestWithPathname::deserialize(is);
     readnum(is, size);
     readnum(is, offset);
+    dbg() << "ReadRequest for '" << getPathname() << "', " << size << ", " << offset << endl;
 }
 
 void ReadRequest::perform(ostream &os)
 {
-    int res = 0;
+    ReadReply &rr = getReply();
     char *data = new char[size];
     if (data) {
-        int fd = open(getPathname().c_str(), O_RDONLY);
-        if (fd != -1) {
-            if (lseek(fd, offset, SEEK_SET) != -1) {
-                res = read(fd, data, size);
-                if (res == -1)
-                    res = -errno;
-            } else
-                res = -errno;
-
-            close(fd);
-        }
+        rr.init(data, size);
+        performLocally();
     } else
-        res = -ENOMEM;
-
-    ReadReply rr(data, size);
-    rr.setResult(res);
+        rr.setResult(-ENOMEM);
     rr.serialize(os);
-
     delete[] data;
+}
+
+void ReadRequest::performLocally()
+{
+    ReadReply &repl = getReply();
+    int res;
+    int fd = open(getPathname().c_str(), O_RDONLY);
+    if (fd != -1) {
+        if (lseek(fd, offset, SEEK_SET) != -1) {
+            res = read(fd, repl.getData(), size);
+            if (res == -1)
+                res = -errno;
+        } else
+            res = -errno;
+
+        close(fd);
+    } else
+        res = -errno;
+    getReply().setResult(res);
 }
 
 void ReadReply::serialize(ostream &os) const
@@ -302,14 +329,15 @@ void ReadReply::deserialize(istream &is)
 {
     dbg() << "deserializing ReadReply" << endl;
     this->Reply::deserialize(is);
-    if (getResult() > 0)
-        is.read(data, getResult());
+    int res = getResult();
+    if (res > 0 && (size_t)res <= len)
+        is.read(data, res);
 }
 
 
 void WriteRequest::serialize(ostream &os) const
 {
-    this->RequestWithPathname<Message::WRITE>::serialize(os);
+    this->RequestWithPathname<WriteReply,Message::WRITE>::serialize(os);
     writenum(os, size);
     writenum(os, offset);
     os.write(data, size);
@@ -317,7 +345,7 @@ void WriteRequest::serialize(ostream &os) const
 
 void WriteRequest::deserialize(istream &is)
 {
-    this->RequestWithPathname<Message::WRITE>::deserialize(is);
+    this->Super::deserialize(is);
     readnum(is, size);
     readnum(is, offset);
     char *datap = new char[size];
@@ -326,7 +354,7 @@ void WriteRequest::deserialize(istream &is)
     del_data = true;
 }
 
-void WriteRequest::perform(ostream &os)
+void WriteRequest::performLocally()
 {
     int res = 0;
     int fd = open(getPathname().c_str(), O_WRONLY);
@@ -339,38 +367,26 @@ void WriteRequest::perform(ostream &os)
             res = -errno;
 
         close(fd);
-    }
-
-    WriteReply repl;
-    repl.setResult(res);
-    repl.serialize(os);
-}
-
-void WriteReply::serialize(ostream &os) const
-{
-    this->Reply::serialize(os);
-}
-
-void WriteReply::deserialize(istream &is)
-{
-    this->Reply::deserialize(is);
+    } else
+        res = -errno;
+    getReply().setResult(res);
 }
 
 void OpenRequest::serialize(ostream &os) const
 {
-    this->RequestWithPathname<Message::OPEN>::serialize(os);
+    this->Super::serialize(os);
     writenum(os, flags);
     writenum(os, mode);
 }
 
 void OpenRequest::deserialize(istream &is)
 {
-    this->RequestWithPathname<Message::OPEN>::deserialize(is);
+    this->Super::deserialize(is);
     readnum(is, flags);
     readnum(is, mode);
 }
 
-void OpenRequest::perform(ostream &os)
+void OpenRequest::performLocally()
 {
     int res = 0;
     int fd = open(getPathname().c_str(), flags, mode);
@@ -378,58 +394,45 @@ void OpenRequest::perform(ostream &os)
         res = -errno;
     else
         close(fd);
-    OpenReply repl;
-    repl.setResult(res);
-    repl.serialize(os);
+    getReply().setResult(res);
 }
 
-void TruncateRequest::perform(ostream &os)
+void TruncateRequest::performLocally()
 {
     int res = truncate(getPathname().c_str(), val);
     if (res < 0)
         res = -errno;
-    TruncateReply repl;
-    repl.setResult(res);
-    repl.serialize(os);
+    getReply().setResult(res);
 }
 
-void ChmodRequest::perform(ostream &os)
+void ChmodRequest::performLocally()
 {
     int res = chmod(getPathname().c_str(), val);
     if (res < 0)
         res = -errno;
-    ChmodReply repl;
-    repl.setResult(res);
-    repl.serialize(os);
+    getReply().setResult(res);
 }
 
-void MkdirRequest::perform(ostream &os)
+void MkdirRequest::performLocally()
 {
     int res = mkdir(getPathname().c_str(), val);
     if (res < 0)
         res = -errno;
-    MkdirReply repl;
-    repl.setResult(res);
-    repl.serialize(os);
+    getReply().setResult(res);
 }
 
-void UnlinkRequest::perform(ostream &os)
+void UnlinkRequest::performLocally()
 {
     int res = unlink(getPathname().c_str());
     if (res < 0)
         res = -errno;
-    UnlinkReply repl;
-    repl.setResult(res);
-    repl.serialize(os);
+    getReply().setResult(res);
 }
 
-
-void RmdirRequest::perform(ostream &os)
+void RmdirRequest::performLocally()
 {
     int res = rmdir(getPathname().c_str());
     if (res < 0)
         res = -errno;
-    RmdirReply repl;
-    repl.setResult(res);
-    repl.serialize(os);
+    getReply().setResult(res);
 }

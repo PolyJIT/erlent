@@ -22,19 +22,21 @@ using namespace std;
 
 static int erlent_getattr(const char *path, struct stat *stbuf) {
     dbg() << "erlent_getattr" << endl;
-    GetattrReply repl(stbuf);
-    return GetattrRequest(path).process(repl);
+    GetattrRequest req(path);
+    req.getReply().init(stbuf);
+    return req.process();
 }
     
 static int erlent_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
                           off_t offset, struct fuse_file_info *fi)
 {
     dbg() << "erlent_readdir" << endl;
-    ReaddirReply rr;
     (void) offset;
     (void) fi;
 
-    int res = ReaddirRequest(path).process(rr);
+    ReaddirRequest req(path);
+    int res = req.process();
+    ReaddirReply &rr = req.getReply();
     if (res == 0) {
         ReaddirReply::name_iterator end = rr.names_end(), it;
         for (it=rr.names_begin(); it != end; ++it) {
@@ -48,24 +50,23 @@ static int erlent_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 static int erlent_open(const char *path, struct fuse_file_info *fi)
 {
     dbg() << "erlent_open for '" << path << "'." << endl;
-    OpenReply repl;
-    return OpenRequest(path, fi->flags, 0).process(repl);
+    return OpenRequest(path, fi->flags, 0).process();
 }
 
 static int erlent_read(const char *path, char *buf, size_t size, off_t offset,
                        struct fuse_file_info *fi)
 {
     dbg() << "erlent_read" << endl;
-    ReadReply rr(buf, size);
-    return ReadRequest(path, size, offset).process(rr);
+    ReadRequest req(path, size, offset);
+    req.getReply().init(buf, size);
+    return req.process();
 }
 
 static int erlent_write(const char *path, const char *data, size_t size, off_t offset,
                         struct fuse_file_info *fi)
 {
     dbg() << "erlent_write" << endl;
-    WriteReply repl;
-    return WriteRequest(path, data, size, offset).process(repl);
+    return WriteRequest(path, data, size, offset).process();
 }
 
 static int erlent_access(const char *path, int perms) {
@@ -75,40 +76,34 @@ static int erlent_access(const char *path, int perms) {
 
 static int erlent_truncate(const char *path, off_t size) {
     dbg() << "erlent_truncate" << endl;
-    TruncateReply repl;
-    return TruncateRequest(path, size).process(repl);
+    return TruncateRequest(path, size).process();
 }
 
 static int erlent_chmod(const char *path, mode_t mode) {
     dbg() << "erlent_chmod" << endl;
-    ChmodReply repl;
-    return ChmodRequest(path, mode).process(repl);
+    return ChmodRequest(path, mode).process();
 }
 
 static int erlent_mkdir(const char *path, mode_t mode) {
     dbg() << "erlent_mkdir" << endl;
-    MkdirReply repl;
-    return MkdirRequest(path, mode).process(repl);
+    return MkdirRequest(path, mode).process();
 }
 
 static int erlent_unlink(const char *path) {
     dbg() << "erlent_unlink" << endl;
-    UnlinkReply repl;
-    return UnlinkRequest(path).process(repl);
+    return UnlinkRequest(path).process();
 }
 
 static int erlent_rmdir(const char *path) {
     dbg() << "erlent_rmdir" << endl;
-    RmdirReply repl;
-    return RmdirRequest(path).process(repl);
+    return RmdirRequest(path).process();
 }
 
 
 static int erlent_create(const char *path , mode_t mode, struct fuse_file_info *fi)
 {
     dbg() << "erlent_create" << endl;
-    OpenReply repl;
-    return OpenRequest(path, O_CREAT|O_WRONLY|O_TRUNC, mode).process(repl);
+    return OpenRequest(path, O_CREAT|O_WRONLY|O_TRUNC, mode).process();
 }
 
 static int erlent_flush(const char *path, struct fuse_file_info *fi)
