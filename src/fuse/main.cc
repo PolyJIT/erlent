@@ -161,7 +161,8 @@ static void *erlent_init(struct fuse_conn_info *conn)
     return 0;
 }
 
-char *newroot;
+char *tempdir;
+const char *newroot;
 char *newwd;
 char **args;
 
@@ -241,6 +242,7 @@ static void cleanup()
         } else
             tries = 0;
     } while (tries > 0);
+    rmdir(tempdir);
 }
 
 static pid_t child_pid, fuse_pid;
@@ -300,15 +302,21 @@ int main(int argc, char *argv[])
         args[i] = argv[i+usercmd];
     args[n_args] = 0;
 
-    char newroottempl[] = "/tmp/newroot.XXXXXX";
+    char tempdirtempl[] = "/tmp/erlent.XXXXXX";
     int fd;
 
     gethostname(hostname, sizeof(hostname));
 
-    newroot = mkdtemp(newroottempl);
-    if (newroot == NULL)
+    tempdir = mkdtemp(tempdirtempl);
+    if (tempdir == NULL)
         errExit("mkdtemp");
-    dbg() << "Running on " << hostname << ", temp dir: " << newroot << endl;
+    string newrootStr = string(tempdir) + "/newroot";
+    newroot = newrootStr.c_str();
+    if (mkdir(newroot, S_IRWXU) == -1) {
+        rmdir(tempdir);
+        errExit("mkdir");
+    }
+    dbg() << "Running on " << hostname << ", new root: " << newroot << endl;
 
     struct sigaction sact;
     memset(&sact, 0, sizeof(sact));
@@ -376,7 +384,7 @@ int main(int argc, char *argv[])
     else if (fuse_pid == 0) {
         char *fuse_args[] = {
             argv[0], strdup("-f"), strdup("-s"),
-            strdup("-o"), strdup("auto_unmount"), newroot
+            strdup("-o"), strdup("auto_unmount"), strdup(newroot)
         };
         int fuse_argc = sizeof(fuse_args)/sizeof(*fuse_args);
         exit(fuse_main(fuse_argc, fuse_args, &erlent_oper, NULL));
