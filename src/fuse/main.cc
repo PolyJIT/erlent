@@ -265,7 +265,8 @@ void sigchld_action(int signum, siginfo_t *si, void *ctx)
 
 static void usage(const char *progname)
 {
-    cerr << "USAGE: " << progname << " [-w DIR] [-h] CMD ARGS..." << endl
+    cerr << "USAGE: " << progname << " [-w PATH] [-w DIR] [-h] [--] CMD ARGS..." << endl
+         << "   -l PATH      perform operations on PATH locally"
          << "   -w DIR       change working directory to DIR" << endl
          << "   -h           print this help" << endl
          << "   CMD ARGS...  command to execute and its arguments" << endl;
@@ -275,14 +276,20 @@ int main(int argc, char *argv[])
 {
     int opt, usercmd;
 
+    /*Request::addLocalPath("/bin/");
+    Request::addLocalPath("/lib/");
+    Request::addLocalPath("/tmp/");
+    Request::addLocalPath("/usr/");*/
+
     dbg() << unitbuf;
     cout << unitbuf;
 
     char cwd[PATH_MAX];
     newwd = getcwd(cwd, sizeof(cwd));
 
-    while ((opt = getopt(argc, argv, "+w:h")) != -1) {
+    while ((opt = getopt(argc, argv, "+l:w:h")) != -1) {
         switch(opt) {
+        case 'l': Request::addLocalPath(optarg); break;
         case 'w': newwd = optarg; break;
         case 'h': usage(argv[0]); return 0;
         default:

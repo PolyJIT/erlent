@@ -172,7 +172,20 @@ void Request::deserialize(istream &is)
 
 bool Request::isPathnameForLocalOperation(const string &pathname)
 {
-    return pathname.find("/tmp/") == 0 || pathname == "/tmp";
+    set<string>::const_iterator it, end = localPaths.end();
+    for (it=localPaths.begin(); it!=end; ++it) {
+        if (pathname.find(*it) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::set<std::string> Request::localPaths;
+
+void Request::addLocalPath(const string &pathname)
+{
+    localPaths.insert(pathname);
 }
 
 void ReaddirRequest::performLocally()

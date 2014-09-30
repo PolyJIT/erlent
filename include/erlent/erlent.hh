@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <ostream>
 #include <iostream>
+#include <set>
 #include <vector>
 
 extern "C" {
@@ -66,6 +67,7 @@ namespace erlent {
     class Reply;
 
     class Request : public Message {
+        static std::set<std::string> localPaths;
     public:
         static Request *receive(std::istream &is);
         int process();
@@ -79,6 +81,8 @@ namespace erlent {
 
         virtual bool doLocally() const { return false; }
         static bool isPathnameForLocalOperation(const std::string &pathname);
+
+        static void addLocalPath(const std::string &pathname);
     };
 
     class Reply : public Message {
@@ -124,7 +128,7 @@ namespace erlent {
             readstr(is, pathname);
         }
 
-        bool doLocally() { return isPathnameForLocalOperation(getPathname()); }
+        bool doLocally() const { return isPathnameForLocalOperation(getPathname()); }
 
         Message::Type getMessageType() const { return MsgType; }
 
