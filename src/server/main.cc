@@ -5,6 +5,7 @@
 #include <iostream>
 
 extern "C" {
+#include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 }
@@ -67,11 +68,33 @@ static void startchild(int argc, char *argv[])
     close(toparent[0]);
 }
 
+void usage(const char *progname) {
+    cerr << "USAGE: " << progname << "[-h] [--] CMD ARGS..." << endl
+         << "   -h           show this help" << endl
+         << "   CMD ARGS...  command to execute and its arguments" << endl;
+}
+
 int main(int argc, char *argv[])
 {
+    int opt, usercmd;
+
     child_pid = 0;
-    if (argc >= 2)
-        startchild(argc-1, argv+1);
+
+    while ((opt = getopt(argc, argv, "+h")) != -1) {
+        switch(opt) {
+        case 'h': usage(argv[0]); return 0;
+        default:
+            usage(argv[0]); return 1;
+        }
+    }
+    usercmd = optind;
+
+    if (usercmd >= argc) {
+        usage(argv[0]);
+        return 1;
+    }
+
+    startchild(argc-usercmd, &argv[usercmd]);
 
     try {
         cout << unitbuf;
