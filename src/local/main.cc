@@ -65,51 +65,6 @@ public:
     }
 };
 
-static pid_t child_pid;
-
-static void startchild(int argc, char *argv[])
-{
-    int tochild[2], toparent[2];
-    if (pipe(tochild) == -1 || pipe(toparent)) {
-        int err = errno;
-        cerr << "Error creating pipes: " << strerror(err) << endl;
-        exit(1);
-    }
-    child_pid = fork();
-    if (child_pid == -1) {
-        int err = errno;
-        cerr << "Error in fork: " << strerror(err) << endl;
-        exit(1);
-    } else if (child_pid == 0) {
-
-        close(tochild[1]);
-        close(toparent[0]);
-        dup2(tochild[0], 0);
-        dup2(toparent[1], 1);
-        close(tochild[0]);
-        close(toparent[1]);
-
-        char **args = new char* [argc+1];
-        for (int i=0; i<argc; ++i)
-            args[i] = argv[i];
-        args[argc] = 0;
-
-        execvp(args[0], args);
-        int err = errno;
-        cerr << "Could not execute '" << argv[0] << "': " << strerror(err) << endl;
-        exit(127);
-    }
-
-    close(tochild[0]);
-    close(toparent[1]);
-
-    dup2(tochild[1], 1);
-    dup2(toparent[0], 0);
-
-    close(tochild[1]);
-    close(toparent[0]);
-}
-
 static void usage(const char *progname)
 {
     cerr << "USAGE: " << progname << " [-l PATH] [-L PATH] [-w DIR] [-d] [-h] [--] CMD ARGS..." << endl
@@ -126,8 +81,6 @@ int main(int argc, char *argv[])
 {
     LocalRequestProcessor reqproc;
     int opt, usercmd;
-
-    child_pid = 0;
 
     dbg() << unitbuf;
 
