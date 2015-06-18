@@ -10,7 +10,9 @@ set(CMAKE_CXX_FLAGS "-g -std=c++11 -pedantic -Wall -O")
 include_directories("${PROJECT_SOURCE_DIR}/include")
 
 add_library(erlent
+  src/erlent/child.cc
   src/erlent/erlent.cc
+  src/erlent/fuse.cc
 )
 
 add_executable(erlent-server src/server/main.cc)
@@ -19,4 +21,10 @@ target_link_libraries(erlent-server erlent)
 add_executable(erlent-fuse src/fuse/main.cc)
 target_link_libraries(erlent-fuse erlent fuse)
 
-install(TARGETS erlent-server erlent-fuse RUNTIME DESTINATION bin)
+add_executable(erlent-local src/local/main.cc)
+target_link_libraries(erlent-local erlent fuse)
+
+add_executable(uchroot src/uchroot/main.cc)
+target_link_libraries(uchroot erlent)
+
+install(TARGETS erlent-server erlent-fuse erlent-local uchroot RUNTIME DESTINATION bin)

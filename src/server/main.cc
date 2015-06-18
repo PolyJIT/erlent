@@ -69,8 +69,9 @@ static void startchild(int argc, char *argv[])
 }
 
 void usage(const char *progname) {
-    cerr << "USAGE: " << progname << "[-h] [--] CMD ARGS..." << endl
+    cerr << "USAGE: " << progname << "[-d] [-h] [--] CMD ARGS..." << endl
          << "   -h           show this help" << endl
+         << "   -d           show debug messages" << endl
          << "   CMD ARGS...  command to execute and its arguments" << endl;
 }
 
@@ -80,8 +81,9 @@ int main(int argc, char *argv[])
 
     child_pid = 0;
 
-    while ((opt = getopt(argc, argv, "+h")) != -1) {
+    while ((opt = getopt(argc, argv, "+dh")) != -1) {
         switch(opt) {
+        case 'd': GlobalOptions::setDebug(true); break;
         case 'h': usage(argv[0]); return 0;
         default:
             usage(argv[0]); return 1;

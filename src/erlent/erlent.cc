@@ -23,12 +23,14 @@ class nullostream : public ostream {
 
 static nullostream dbgnull;
 
-ostream &erlent::dbg() { return dbgnull /*std::cerr*/; }
+ostream &erlent::dbg() {
+    return GlobalOptions::isDebug() ? std::cerr : dbgnull;
+}
 
 char erlent::getnextchar(istream &is) {
     int c = is.get();
     if (c == EOF) {
-        // std::cerr << "End of input." << endl;
+        dbg() << "End of input." << endl;
         throw EofException();
     }
     return (char)c;
@@ -136,23 +138,6 @@ void Reply::deserialize(istream &is)
     readnum(is, result);
 }
 
-int Request::process()
-{
-    ostream &os = cout;
-    istream &is = cin;
-    Reply &repl = getReply();
-
-    if (doLocally()) {
-        performLocally();
-    } else {
-        serialize(os);
-        os.flush();
-        repl.receive(is);
-    }
-
-    return repl.getResult();
-}
-
 void Request::perform(ostream &os)
 {
     performLocally();
@@ -168,24 +153,6 @@ void Request::serialize(ostream &os) const
 void Request::deserialize(istream &is)
 {
     dbg() << "Deserializing " << typeName(getMessageType()) << " request." << endl;
-}
-
-bool Request::isPathnameForLocalOperation(const string &pathname)
-{
-    set<string>::const_iterator it, end = localPaths.end();
-    for (it=localPaths.begin(); it!=end; ++it) {
-        if (pathname.find(*it) == 0) {
-            return true;
-        }
-    }
-    return false;
-}
-
-std::set<std::string> Request::localPaths;
-
-void Request::addLocalPath(const string &pathname)
-{
-    localPaths.insert(pathname);
 }
 
 void ReaddirRequest::performLocally()
@@ -350,7 +317,7 @@ void ReadReply::deserialize(istream &is)
 
 void WriteRequest::serialize(ostream &os) const
 {
-    this->RequestWithPathname<WriteReply,Message::WRITE>::serialize(os);
+    this->Super::serialize(os);
     writenum(os, size);
     writenum(os, offset);
     os.write(data, size);
@@ -448,4 +415,51 @@ void RmdirRequest::performLocally()
     if (res < 0)
         res = -errno;
     getReply().setResult(res);
+}
+
+
+bool GlobalOptions::debug = false;
+
+bool GlobalOptions::isDebug()
+{
+    return debug;
+}
+
+void GlobalOptions::setDebug(bool dbg)
+{
+    debug = dbg;
+}
+
+
+
+void RequestProcessor::appendLocalPath(const string &pathname) {
+    paths.push_back(PathProp(true, pathname));
+}
+
+void RequestProcessor::appendRemotePath(const string &pathname) {
+    paths.push_back(PathProp(false, pathname));
+}
+
+void RequestProcessor::prependLocalPath(const string &pathname) {
+    paths.insert(paths.begin(), PathProp(true, pathname));
+}
+
+void RequestProcessor::prependRemotePath(const string &pathname) {
+    paths.insert(paths.begin(), PathProp(false, pathname));
+}
+
+bool RequestProcessor::doLocally(const Request &req) const {
+    const RequestWithPathname *rwp = dynamic_cast<const RequestWithPathname *>(&req);
+    return rwp != nullptr && doLocally(rwp->getPathname());
+}
+
+bool RequestProcessor::doLocally(const std::string &pathname) const {
+    std::vector<PathProp>::const_reverse_iterator it, rend = paths.rend();
+    for (it=paths.rbegin(); it!=rend; ++it) {
+        const PathProp &pp = *it;
+        if (pathname.find(pp.path) == 0) {
+            return pp.performLocally;
+        }
+    }
+    return false;
 }

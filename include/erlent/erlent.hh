@@ -16,6 +16,14 @@ extern "C" {
 
 
 namespace erlent {
+    class GlobalOptions {
+    private:
+            static bool debug;
+    public:
+            static bool isDebug();
+            static void setDebug(bool dbg);
+    };
+
     class EofException { };
 
     std::ostream &dbg();
@@ -51,7 +59,7 @@ namespace erlent {
 
     class Message {
     public:
-        enum Type { GETATTR, READDIR, READ, WRITE, OPEN, TRUNCATE, CHMOD,
+        enum Type { GETATTR=42, READDIR, READ, WRITE, OPEN, TRUNCATE, CHMOD,
                     MKDIR, UNLINK, RMDIR };
     protected:
         Message() { }
@@ -67,10 +75,9 @@ namespace erlent {
     class Reply;
 
     class Request : public Message {
-        static std::set<std::string> localPaths;
     public:
         static Request *receive(std::istream &is);
-        int process();
+
         virtual void perform(std::ostream &os);
         virtual void performLocally() = 0;
 
@@ -78,11 +85,6 @@ namespace erlent {
         void deserialize(std::istream &is);
 
         virtual Reply &getReply() = 0;
-
-        virtual bool doLocally() const { return false; }
-        static bool isPathnameForLocalOperation(const std::string &pathname);
-
-        static void addLocalPath(const std::string &pathname);
     };
 
     class Reply : public Message {
@@ -104,12 +106,10 @@ namespace erlent {
         Message::Type getMessageType() const { return MessageTy; }
     };
 
-    template<typename ReplyTy, enum Message::Type MsgType>
     class RequestWithPathname : public Request {
         std::string pathname;
-    protected:
-        ReplyTy reply;
-        typedef RequestWithPathname<ReplyTy,MsgType> Super;
+
+//        typedef RequestWithPathnameTempl<ReplyTy,MsgType> Super;
     public:
         RequestWithPathname() { }
         RequestWithPathname(const char *pathname)
@@ -123,13 +123,26 @@ namespace erlent {
             this->Request::serialize(os);
             writestr(os, pathname);
         }
+
         void deserialize(std::istream &is) {
             this->Request::deserialize(is);
             readstr(is, pathname);
         }
+    };
 
-        bool doLocally() const { return isPathnameForLocalOperation(getPathname()); }
-
+    template<typename ReplyTy, enum Message::Type MsgType>
+    class RequestWithPathnameTempl : public RequestWithPathname {
+    protected:
+        typedef RequestWithPathnameTempl<ReplyTy,MsgType> Super;
+        ReplyTy reply;
+    public:
+        using RequestWithPathname::RequestWithPathname;
+        /*
+        RequestWithPathnameTempl() : RequestWithPathname() { }
+        RequestWithPathnameTempl(const char *pathname)
+            : RequestWithPathname(pathname) { }
+            */
+    public:
         Message::Type getMessageType() const { return MsgType; }
 
         ReplyTy &getReply() { return reply; }
@@ -139,7 +152,7 @@ namespace erlent {
     class GetattrReply : public ReplyTempl<Message::GETATTR> {
         struct stat *stbuf;
     public:
-        void init (struct stat *stbuf) { this->stbuf = stbuf; }
+        void init(struct stat *stbuf) { this->stbuf = stbuf; }
         struct stat *getStbuf() { return stbuf; }
 
         void serialize(std::ostream &os) const;
@@ -148,9 +161,9 @@ namespace erlent {
         Message::Type getMessageType() const { return Message::GETATTR; }
     };
 
-    class GetattrRequest : public RequestWithPathname<GetattrReply, Message::GETATTR> {
+    class GetattrRequest : public RequestWithPathnameTempl<GetattrReply, Message::GETATTR> {
     public:
-        using RequestWithPathname::RequestWithPathname;
+        using Super::RequestWithPathnameTempl;
 
         void perform(std::ostream &os);
         void performLocally();
@@ -172,9 +185,9 @@ namespace erlent {
         name_iterator names_end()   const { return names.end();   }
     };
 
-    class ReaddirRequest : public RequestWithPathname<ReaddirReply, Message::READDIR> {
+    class ReaddirRequest : public RequestWithPathnameTempl<ReaddirReply, Message::READDIR> {
     public:
-        using RequestWithPathname::RequestWithPathname;
+        using Super::RequestWithPathnameTempl;
 
         void performLocally();
     };
@@ -192,14 +205,14 @@ namespace erlent {
         void deserialize(std::istream &is);
     };
 
-    class ReadRequest : public RequestWithPathname<ReadReply, Message::READ> {
+    class ReadRequest : public RequestWithPathnameTempl<ReadReply, Message::READ> {
         size_t size;
         off_t offset;
     public:
         ReadRequest() { }
 
         ReadRequest(const char *pathname, size_t size, off_t offset)
-            : RequestWithPathname(pathname), size(size), offset(offset) { }
+            : RequestWithPathnameTempl(pathname), size(size), offset(offset) { }
 
         void serialize(std::ostream &os) const;
         void deserialize(std::istream &is);
@@ -211,7 +224,7 @@ namespace erlent {
     class WriteReply : public ReplyTempl<Message::WRITE> {
     };
 
-    class WriteRequest : public RequestWithPathname<WriteReply, Message::WRITE> {
+    class WriteRequest : public RequestWithPathnameTempl<WriteReply, Message::WRITE> {
         const char *data;
         size_t size;
         off_t offset;
@@ -219,7 +232,7 @@ namespace erlent {
     public:
         WriteRequest() { }
         WriteRequest(const char *pathname, const char *data, size_t size, off_t offset)
-            : RequestWithPathname(pathname), data(data), size(size), offset(offset), del_data(false) { }
+            : RequestWithPathnameTempl(pathname), data(data), size(size), offset(offset), del_data(false) { }
 
         ~WriteRequest() {
             if (del_data)
@@ -235,13 +248,13 @@ namespace erlent {
     class OpenReply : public ReplyTempl<Message::OPEN> {
     };
 
-    class OpenRequest : public RequestWithPathname<OpenReply,Message::OPEN> {
+    class OpenRequest : public RequestWithPathnameTempl<OpenReply,Message::OPEN> {
         int flags;
         mode_t mode;
     public:
         OpenRequest() { }
         OpenRequest(const char *pathname, int flags, mode_t mode)
-            : RequestWithPathname(pathname), flags(flags), mode(mode) { }
+            : RequestWithPathnameTempl(pathname), flags(flags), mode(mode) { }
 
         void serialize(std::ostream &os) const;
         void deserialize(std::istream &is);
@@ -250,21 +263,21 @@ namespace erlent {
     };
 
     template<typename ReplyTy, Message::Type MsgType, typename VALTY>
-    class RequestWithPathVal : public RequestWithPathname<ReplyTy, MsgType> {
+    class RequestWithPathVal : public RequestWithPathnameTempl<ReplyTy, MsgType> {
     protected:
         VALTY val;
     public:
         RequestWithPathVal() { }
         RequestWithPathVal(const char *pathname, VALTY val)
-            : RequestWithPathname<ReplyTy, MsgType>(pathname), val(val) { }
+            : RequestWithPathnameTempl<ReplyTy, MsgType>(pathname), val(val) { }
 
         void serialize(std::ostream &os) const {
-            this->RequestWithPathname<ReplyTy, MsgType>::serialize(os);
+            this->RequestWithPathnameTempl<ReplyTy, MsgType>::serialize(os);
             writenum(os, val);
         }
 
         void deserialize(std::istream &is) {
-            this->RequestWithPathname<ReplyTy, MsgType>::deserialize(is);
+            this->RequestWithPathnameTempl<ReplyTy, MsgType>::deserialize(is);
             readnum(is, val);
         }
     };
@@ -299,19 +312,43 @@ namespace erlent {
     class UnlinkReply : public ReplyTempl<Message::UNLINK> {
     };
 
-    class UnlinkRequest : public RequestWithPathname<UnlinkReply, Message::UNLINK> {
+    class UnlinkRequest : public RequestWithPathnameTempl<UnlinkReply, Message::UNLINK> {
     public:
-        using RequestWithPathname::RequestWithPathname;
+        using Super::RequestWithPathnameTempl;
         void performLocally();
     };
 
     class RmdirReply : public ReplyTempl<Message::RMDIR> {
     };
 
-    class RmdirRequest : public RequestWithPathname<RmdirReply, Message::RMDIR> {
+    class RmdirRequest : public RequestWithPathnameTempl<RmdirReply, Message::RMDIR> {
     public:
-        using RequestWithPathname<RmdirReply, Message::RMDIR>::RequestWithPathname;
+        using Super::RequestWithPathnameTempl;
         void performLocally();
+    };
+
+    class RequestProcessor {
+    private:
+        struct PathProp {
+            bool performLocally;
+            std::string path;
+
+            PathProp(bool local, const std::string &p)
+                : performLocally(local), path(p) { }
+        };
+
+        std::vector<PathProp> paths;
+
+    public:
+        virtual int process(Request &req) = 0;
+
+        void appendLocalPath(const std::string &pathname);
+        void appendRemotePath(const std::string &pathname);
+        void prependLocalPath(const std::string &pathname);
+        void prependRemotePath(const std::string &pathname);
+
+        bool doLocally(const Request &req) const;
+        bool doLocally(const std::string &pathname) const;
     };
 }
 
