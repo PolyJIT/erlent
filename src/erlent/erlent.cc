@@ -219,7 +219,6 @@ void GetattrRequest::performLocally()
     int res = stat(pathname.c_str(), repl.getStbuf());
     if (res == -1)
         res = -errno;
-    dbg() << "result is " << strerror(-res) << endl;
     repl.setResult(res);
 }
 

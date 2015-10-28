@@ -41,6 +41,7 @@ public:
             repl.receive(is);
         }
 
+        dbg() << "result is " << repl.getResultMessage() << endl;
         return repl.getResult();
     }
 };
@@ -97,8 +98,10 @@ int main(int argc, char *argv[])
         reqproc.prependRemotePath("/sys");
         reqproc.prependRemotePath("/proc");
         reqproc.prependRemotePath("/dev");
-        reqproc.prependLocalPath("/");
     }
+    reqproc.prependLocalPath("/");
 
-    return erlent_fuse(reqproc, newwd, args);
+    uid_t euid = geteuid();
+    gid_t egid = getegid();
+    return erlent_fuse(reqproc, newwd, args, euid, egid);
 }

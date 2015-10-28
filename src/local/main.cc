@@ -60,7 +60,7 @@ public:
             }
         }
         req.performLocally();
-
+        dbg() << "(local) result is " << repl.getResultMessage() << endl;
         return repl.getResult();
     }
 };
@@ -68,10 +68,14 @@ public:
 static void usage(const char *progname)
 {
     cerr << "USAGE: " << progname << " [-l PATH] [-L PATH] [-w DIR] [-d] [-h] [--] CMD ARGS..." << endl
-         << "   -l PATH      perform operations on PATH locally"
-         << "   -L PATH      perform operations on PATH remotely"
-         << "   -C           use default -l/-L settings for chroots"
+         << "   -r DIR       new root directory" << endl
          << "   -w DIR       change working directory to DIR" << endl
+         << "   -l PATH      map PATH relative to new root" << endl
+         << "   -L PATH      map PATH to host directory" << endl
+         << "   -C           use default -l/-L settings for chroots:" << endl
+         << "                   pass through /dev, /proc and /sys" << endl
+         << "   -u UID       change user ID to UID" << endl
+         << "   -g GID       change group ID to GID" << endl
          << "   -d           Turn debug messagen on" << endl
          << "   -h           print this help" << endl
          << "   CMD ARGS...  command to execute and its arguments" << endl;
@@ -82,19 +86,26 @@ int main(int argc, char *argv[])
     LocalRequestProcessor reqproc;
     int opt, usercmd;
 
+    uid_t euid = geteuid();
+    gid_t egid = getegid();
+    uid_t inner_uid = euid;
+    gid_t inner_gid = egid;
+
     dbg() << unitbuf;
 
     char cwd[PATH_MAX];
     char *newwd = getcwd(cwd, sizeof(cwd));
 
     bool chrootDefaults = false;
-    while ((opt = getopt(argc, argv, "+l:L:Cr:w:dh")) != -1) {
+    while ((opt = getopt(argc, argv, "+l:L:Cr:w:u:g:dh")) != -1) {
         switch(opt) {
         case 'l': reqproc.appendLocalPath(optarg);  break;
         case 'L': reqproc.appendRemotePath(optarg); break;
         case 'C': chrootDefaults = true; break;
         case 'r': reqproc.setChrootDir(optarg); break;
         case 'w': newwd = optarg; break;
+        case 'u': inner_uid = atol(optarg); break;
+        case 'g': inner_gid = atol(optarg); break;
         case 'd': GlobalOptions::setDebug(true); break;
         case 'h': usage(argv[0]); return 0;
         default:
@@ -115,11 +126,10 @@ int main(int argc, char *argv[])
     args[n_args] = 0;
 
     if (chrootDefaults) {
-        reqproc.prependRemotePath("/sys");
-        reqproc.prependRemotePath("/proc");
-        reqproc.prependRemotePath("/dev");
-        reqproc.prependLocalPath("/");
+        reqproc.prependLocalPath("/sys");
+        reqproc.prependLocalPath("/proc");
+        reqproc.prependLocalPath("/dev");
     }
 
-    return erlent_fuse(reqproc, newwd, args);
+    return erlent_fuse(reqproc, newwd, args, inner_uid, inner_gid);
 }

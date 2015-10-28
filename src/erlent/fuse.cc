@@ -61,7 +61,7 @@ static int erlent_open(const char *path, struct fuse_file_info *fi)
 static int erlent_read(const char *path, char *buf, size_t size, off_t offset,
                        struct fuse_file_info *fi)
 {
-    dbg() << "erlent_read" << endl;
+    dbg() << "erlent_read '" << path << "'." << endl;
     ReadRequest req(path, size, offset);
     req.getReply().init(buf, size);
     return reqproc->process(req);
@@ -70,42 +70,42 @@ static int erlent_read(const char *path, char *buf, size_t size, off_t offset,
 static int erlent_write(const char *path, const char *data, size_t size, off_t offset,
                         struct fuse_file_info *fi)
 {
-    dbg() << "erlent_write" << endl;
+    dbg() << "erlent_write '" << path << "'." << endl;
     WriteRequest req(path, data, size, offset);
     return reqproc->process(req);
 }
 
 static int erlent_access(const char *path, int perms) {
-    dbg() << "erlent_access" << endl;
+    dbg() << "erlent_access '" << path << "'." << endl;
     return -ENOSYS;
 }
 
 static int erlent_truncate(const char *path, off_t size) {
-    dbg() << "erlent_truncate" << endl;
+    dbg() << "erlent_truncate '" << path << "'." << endl;
     TruncateRequest req(path, size);
     return reqproc->process(req);
 }
 
 static int erlent_chmod(const char *path, mode_t mode) {
-    dbg() << "erlent_chmod" << endl;
+    dbg() << "erlent_chmod '" << path << "', mode " << hex << mode << endl;
     ChmodRequest req(path, mode);
     return reqproc->process(req);
 }
 
 static int erlent_mkdir(const char *path, mode_t mode) {
-    dbg() << "erlent_mkdir" << endl;
+    dbg() << "erlent_mkdir '" << path << "'." << endl;
     MkdirRequest req(path, mode);
     return reqproc->process(req);
 }
 
 static int erlent_unlink(const char *path) {
-    dbg() << "erlent_unlink" << endl;
+    dbg() << "erlent_unlink '" << path << "'." << endl;
     UnlinkRequest req(path);
     return reqproc->process(req);
 }
 
 static int erlent_rmdir(const char *path) {
-    dbg() << "erlent_rmdir" << endl;
+    dbg() << "erlent_rmdir '" << path << "'." << endl;
     RmdirRequest req(path);
     return reqproc->process(req);
 }
@@ -113,7 +113,7 @@ static int erlent_rmdir(const char *path) {
 
 static int erlent_create(const char *path , mode_t mode, struct fuse_file_info *fi)
 {
-    dbg() << "erlent_create" << endl;
+    dbg() << "erlent_create '" << path << "'." << endl;
     OpenRequest req(path, O_CREAT|O_WRONLY|O_TRUNC, mode);
     return reqproc->process(req);
 }
@@ -212,7 +212,7 @@ static void sigchld_action(int signum, siginfo_t *si, void *ctx)
 }
 
 int erlent_fuse(RequestProcessor &rp, const char *newWorkDir,
-                char *const *cmdArgs)
+        char *const *cmdArgs, uid_t new_uid, gid_t new_gid)
 {
     reqproc = &rp;
 
@@ -238,9 +238,7 @@ int erlent_fuse(RequestProcessor &rp, const char *newWorkDir,
     if (sigaction(SIGCLD, &sact, 0) == -1)
         errExit("sigaction");
 
-    uid_t euid = geteuid();
-    gid_t egid = getegid();
-    child_pid = setup_child(euid, egid, newroot, newWorkDir, cmdArgs);
+    child_pid = setup_child(new_uid, new_gid, newroot, newWorkDir, cmdArgs);
     if (child_pid == -1)
         errExit("fork");
 
