@@ -27,4 +27,6 @@ target_link_libraries(erlent-local erlent fuse)
 add_executable(uchroot src/uchroot/main.cc)
 target_link_libraries(uchroot erlent)
 
-install(TARGETS erlent-server erlent-fuse erlent-local uchroot RUNTIME DESTINATION bin)
+add_executable(binddev src/binddev/main.cc)
+
+install(TARGETS erlent-server erlent-fuse erlent-local uchroot binddev RUNTIME DESTINATION bin)
