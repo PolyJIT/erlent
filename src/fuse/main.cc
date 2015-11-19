@@ -34,6 +34,7 @@ public:
         Reply &repl = req.getReply();
 
         if (doLocally(req)) {
+            makePathLocal(req);
             req.performLocally();
         } else {
             req.serialize(os);
@@ -69,10 +70,8 @@ int main(int argc, char *argv[])
     char *newwd = getcwd(cwd, sizeof(cwd));
 
     bool chrootDefaults = false;
-    while ((opt = getopt(argc, argv, "+l:L:Cw:dh")) != -1) {
+    while ((opt = getopt(argc, argv, "+Cw:dh")) != -1) {
         switch(opt) {
-        case 'l': reqproc.appendLocalPath(optarg);  break;
-        case 'L': reqproc.appendRemotePath(optarg); break;
         case 'C': chrootDefaults = true; break;
         case 'w': newwd = optarg; break;
         case 'd': GlobalOptions::setDebug(true); break;
@@ -95,11 +94,10 @@ int main(int argc, char *argv[])
     args[n_args] = 0;
 
     if (chrootDefaults) {
-        reqproc.prependRemotePath("/sys");
-        reqproc.prependRemotePath("/proc");
-        reqproc.prependRemotePath("/dev");
+        reqproc.addPathMapping(true, "/sys", "/sys");
+        reqproc.addPathMapping(true, "/proc", "/proc");
+        reqproc.addPathMapping(true, "/dev", "/dev");
     }
-    reqproc.prependLocalPath("/");
 
     uid_t euid = geteuid();
     gid_t egid = getegid();

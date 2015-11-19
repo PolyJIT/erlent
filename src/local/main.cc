@@ -28,28 +28,11 @@ using namespace erlent;
 
 using namespace std;
 
-struct PathProp {
-    bool performLocally;
-    std::string path;
-
-    PathProp(bool local, const string &p)
-        : performLocally(local), path(p) { }
-};
-
 class LocalRequestProcessor : public RequestProcessor
 {
-private:
-    std::string chrootDir;
 public:
-    LocalRequestProcessor() : chrootDir("/") {}
-
-    void setChrootDir(const char *dir) {
-        chrootDir = dir;
-        if (*chrootDir.rend() != '/')
-            chrootDir.push_back('/');
-    }
-
     int process(Request &req) override {
+        makePathLocal(req);
         Reply &repl = req.getReply();
 
         if (!doLocally(req)) {
@@ -67,11 +50,9 @@ public:
 
 static void usage(const char *progname)
 {
-    cerr << "USAGE: " << progname << " [-l PATH] [-L PATH] [-w DIR] [-d] [-h] [--] CMD ARGS..." << endl
+    cerr << "USAGE: " << progname << " [-l PATH] [-L PATH] [-w DIR] [-r DIR] [-d] [-h] [--] CMD ARGS..." << endl
          << "   -r DIR       new root directory" << endl
          << "   -w DIR       change working directory to DIR" << endl
-         << "   -l PATH      map PATH relative to new root" << endl
-         << "   -L PATH      map PATH to host directory" << endl
          << "   -C           use default -l/-L settings for chroots:" << endl
          << "                   pass through /dev, /proc and /sys" << endl
          << "   -u UID       change user ID to UID" << endl
@@ -83,6 +64,7 @@ static void usage(const char *progname)
 
 int main(int argc, char *argv[])
 {
+    string chrootDir("/");
     LocalRequestProcessor reqproc;
     int opt, usercmd;
 
@@ -97,12 +79,10 @@ int main(int argc, char *argv[])
     char *newwd = getcwd(cwd, sizeof(cwd));
 
     bool chrootDefaults = false;
-    while ((opt = getopt(argc, argv, "+l:L:Cr:w:u:g:dh")) != -1) {
+    while ((opt = getopt(argc, argv, "+Cr:w:u:g:dh")) != -1) {
         switch(opt) {
-        case 'l': reqproc.appendLocalPath(optarg);  break;
-        case 'L': reqproc.appendRemotePath(optarg); break;
         case 'C': chrootDefaults = true; break;
-        case 'r': reqproc.setChrootDir(optarg); break;
+        case 'r': chrootDir = optarg; break;
         case 'w': newwd = optarg; break;
         case 'u': inner_uid = atol(optarg); break;
         case 'g': inner_gid = atol(optarg); break;
@@ -126,10 +106,11 @@ int main(int argc, char *argv[])
     args[n_args] = 0;
 
     if (chrootDefaults) {
-        reqproc.prependLocalPath("/sys");
-        reqproc.prependLocalPath("/proc");
-        reqproc.prependLocalPath("/dev");
+        reqproc.addPathMapping(true, "/sys", "/sys");
+        reqproc.addPathMapping(true, "/proc", "/proc");
+        reqproc.addPathMapping(true, "/dev", "/dev");
     }
+    reqproc.addPathMapping(true, "", chrootDir);
 
     return erlent_fuse(reqproc, newwd, args, inner_uid, inner_gid);
 }

@@ -118,6 +118,9 @@ namespace erlent {
         void setPathname(const char *pathname) {
             this->pathname = pathname;
         }
+        void setPathname(const std::string &pathname) {
+            this->pathname = pathname;
+        }
 
         void serialize(std::ostream &os) const {
             this->Request::serialize(os);
@@ -330,11 +333,12 @@ namespace erlent {
     class RequestProcessor {
     private:
         struct PathProp {
-            bool performLocally;
-            std::string path;
+            bool doLocally;
+            std::string insidePath;
+            std::string outsidePath;
 
-            PathProp(bool local, const std::string &p)
-                : performLocally(local), path(p) { }
+            PathProp(bool doLocally, const std::string &inside, const std::string &outside)
+                : doLocally(doLocally), insidePath(inside), outsidePath(outside) { }
         };
 
         std::vector<PathProp> paths;
@@ -342,13 +346,11 @@ namespace erlent {
     public:
         virtual int process(Request &req) = 0;
 
-        void appendLocalPath(const std::string &pathname);
-        void appendRemotePath(const std::string &pathname);
-        void prependLocalPath(const std::string &pathname);
-        void prependRemotePath(const std::string &pathname);
+        void addPathMapping(bool doLocally, const std::string &inside, const std::string &outside);
 
         bool doLocally(const Request &req) const;
         bool doLocally(const std::string &pathname) const;
+        void makePathLocal(Request &req) const;
     };
 }
 

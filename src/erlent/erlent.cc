@@ -2,6 +2,7 @@
 
 #include <cstring>
 
+#include <algorithm>
 #include <istream>
 #include <ostream>
 #include <sstream>
@@ -430,21 +431,28 @@ void GlobalOptions::setDebug(bool dbg)
 }
 
 
-
-void RequestProcessor::appendLocalPath(const string &pathname) {
-    paths.push_back(PathProp(true, pathname));
+void RequestProcessor::addPathMapping(bool doLocally, const string &inside, const string &outside)
+{
+    auto less = [](const PathProp &left, const PathProp &right) {
+        return left.insidePath.length() > right.insidePath.length();
+    };
+    paths.insert(paths.begin(), PathProp(doLocally,inside,outside));
+    sort(paths.begin(), paths.end(), less);
 }
 
-void RequestProcessor::appendRemotePath(const string &pathname) {
-    paths.push_back(PathProp(false, pathname));
-}
-
-void RequestProcessor::prependLocalPath(const string &pathname) {
-    paths.insert(paths.begin(), PathProp(true, pathname));
-}
-
-void RequestProcessor::prependRemotePath(const string &pathname) {
-    paths.insert(paths.begin(), PathProp(false, pathname));
+void RequestProcessor::makePathLocal(Request &req) const {
+    RequestWithPathname *rwp = dynamic_cast<RequestWithPathname *>(&req);
+    if (rwp == nullptr)
+        return;
+    const string &pathname = rwp->getPathname();
+    std::vector<PathProp>::const_iterator it, end = paths.end();
+    for (it=paths.begin(); it!=end; ++it) {
+        const PathProp &pp = *it;
+        if (pathname.find(pp.insidePath) == 0) {
+            rwp->setPathname(pp.outsidePath + pathname.substr(pp.insidePath.length()));
+            return;
+        }
+    }
 }
 
 bool RequestProcessor::doLocally(const Request &req) const {
@@ -453,12 +461,11 @@ bool RequestProcessor::doLocally(const Request &req) const {
 }
 
 bool RequestProcessor::doLocally(const std::string &pathname) const {
-    std::vector<PathProp>::const_reverse_iterator it, rend = paths.rend();
-    for (it=paths.rbegin(); it!=rend; ++it) {
+    std::vector<PathProp>::const_iterator it, end = paths.end();
+    for (it=paths.begin(); it!=end; ++it) {
         const PathProp &pp = *it;
-        if (pathname.find(pp.path) == 0) {
-            return pp.performLocally;
-        }
+        if (pathname.find(pp.insidePath) == 0)
+            return pp.doLocally;
     }
     return false;
 }
