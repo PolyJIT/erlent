@@ -37,11 +37,11 @@ static int erlent_getattr(const char *path, struct stat *stbuf) {
     }
     return res;
 }
-    
+
 static int erlent_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
                           off_t offset, struct fuse_file_info *fi)
 {
-    dbg() << "erlent_readdir" << endl;
+    dbg() << "erlent_readdir '" << path << "'" << endl;
     (void) offset;
     (void) fi;
 
@@ -56,6 +56,10 @@ static int erlent_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     }
 
     return res;
+}
+
+static int erlent_readlink(const char *path, char *result, size_t size) {
+    return -ENOSYS;
 }
 
 static int erlent_open(const char *path, struct fuse_file_info *fi)
@@ -118,12 +122,17 @@ static int erlent_rmdir(const char *path) {
     return reqproc->process(req);
 }
 
-
-static int erlent_create(const char *path , mode_t mode, struct fuse_file_info *fi)
+static int erlent_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 {
     dbg() << "erlent_create '" << path << "'." << endl;
     OpenRequest req(path, O_CREAT|O_WRONLY|O_TRUNC, mode);
     return reqproc->process(req);
+}
+
+static int erlent_mknod(const char *path, mode_t mode, dev_t dev)
+{
+    dbg() << "erlent_mknod '" << path << "'." << endl;
+    return -ENOSYS;
 }
 
 static int erlent_flush(const char *path, struct fuse_file_info *fi)
@@ -235,7 +244,7 @@ int erlent_fuse(RequestProcessor &rp, const char *newWorkDir,
     newroot = newrootStr.c_str();
     if (mkdir(newroot, S_IRWXU) == -1) {
         rmdir(tempdir);
-        errExit("mkdir");
+        errExit("mkdir newroot");
     }
     dbg() << "Running on " << hostname << ", new root: " << newroot << endl;
 
@@ -253,11 +262,13 @@ int erlent_fuse(RequestProcessor &rp, const char *newWorkDir,
     struct fuse_operations erlent_oper;
     memset(&erlent_oper, 0, sizeof(erlent_oper));
     erlent_oper.getattr = erlent_getattr;
+    erlent_oper.readlink = erlent_readlink;
     erlent_oper.readdir = erlent_readdir;
     erlent_oper.open = erlent_open;
     erlent_oper.read = erlent_read;
     erlent_oper.write = erlent_write;
     erlent_oper.create = erlent_create;
+    erlent_oper.mknod  = erlent_mknod;
     erlent_oper.access = erlent_access;
     erlent_oper.truncate = erlent_truncate;
     erlent_oper.chmod    = erlent_chmod;
