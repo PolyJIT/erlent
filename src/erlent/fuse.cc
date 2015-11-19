@@ -18,6 +18,7 @@ using namespace erlent;
 #include <fcntl.h>
 #include <csignal>
 
+#include <limits>
 #include <vector>
 
 using namespace std;
@@ -28,7 +29,13 @@ static int erlent_getattr(const char *path, struct stat *stbuf) {
     dbg() << "erlent_getattr on '" << path << "'" << endl;
     GetattrRequest req(path);
     req.getReply().init(stbuf);
-    return reqproc->process(req);
+    int res = reqproc->process(req);
+    if (res == 0 && S_ISCHR(stbuf->st_mode)) {
+        stbuf->st_mode &= ~S_IFCHR;
+        stbuf->st_mode |= S_IFREG;
+        stbuf->st_size = std::numeric_limits<off_t>::max();
+    }
+    return res;
 }
     
 static int erlent_readdir(const char *path, void *buf, fuse_fill_dir_t filler,

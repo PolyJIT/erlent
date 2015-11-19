@@ -6,6 +6,7 @@
 
 extern "C" {
 #include <unistd.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 }
@@ -34,12 +35,15 @@ public:
     int process(Request &req) override {
         makePathLocal(req);
         Reply &repl = req.getReply();
-
-        if (!doLocally(req)) {
-            RequestWithPathname *rwp = dynamic_cast<RequestWithPathname *>(&req);
-            if (rwp != nullptr) {
-                std::string newPathname = chrootDir + rwp->getPathname();
-                rwp->setPathname(newPathname.c_str());
+        RequestWithPathname *rwp = dynamic_cast<RequestWithPathname *>(&req);
+        if (rwp != nullptr) {
+            dbg() << "performing request on '" << rwp->getPathname() << "'" << endl;
+            struct stat st;
+            if (stat(rwp->getPathname().c_str(), &st) == 0) {
+                if (S_ISCHR(st.st_mode) && dynamic_cast<TruncateRequest *>(&req)) {
+                    dbg() << "(local:) ignoring request to truncate character device" << endl;
+                    return 0;
+                }
             }
         }
         req.performLocally();
