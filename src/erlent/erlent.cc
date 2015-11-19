@@ -63,6 +63,7 @@ string Message::typeName(Message::Type ty)
 {
     switch(ty) {
     case GETATTR: return "Getattr";
+    case ACCESS:  return "Access";
     case READDIR: return "Readdir";
     case READ:    return "Read";
     case WRITE:   return "Write";
@@ -88,6 +89,7 @@ Request *Request::receive(istream &is)
     dbg() << "receive: msgtype=" << msgtype << endl;
     switch(msgtype) {
     case GETATTR:  req = new GetattrRequest();  break;
+    case ACCESS:   req = new AccessRequest();   break;
     case READDIR:  req = new ReaddirRequest();  break;
     case READ:     req = new ReadRequest();     break;
     case WRITE:    req = new WriteRequest();    break;
@@ -468,4 +470,24 @@ bool RequestProcessor::doLocally(const std::string &pathname) const {
             return pp.doLocally;
     }
     return false;
+}
+
+
+void AccessRequest::serialize(ostream &os) const
+{
+    this->RequestWithPathname::serialize(os);
+    writenum(os, acc);
+}
+
+void AccessRequest::deserialize(istream &is) {
+    this->RequestWithPathname::deserialize(is);
+    readnum(is, acc);
+}
+
+void AccessRequest::performLocally()
+{
+    int res = access(getPathname().c_str(), acc);
+    if (res < 0)
+        res = -errno;
+    getReply().setResult(res);
 }

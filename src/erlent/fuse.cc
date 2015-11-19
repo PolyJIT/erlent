@@ -77,7 +77,8 @@ static int erlent_write(const char *path, const char *data, size_t size, off_t o
 
 static int erlent_access(const char *path, int perms) {
     dbg() << "erlent_access '" << path << "'." << endl;
-    return -ENOSYS;
+    AccessRequest req(path, perms);
+    return reqproc->process(req);
 }
 
 static int erlent_truncate(const char *path, off_t size) {

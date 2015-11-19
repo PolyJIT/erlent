@@ -59,7 +59,8 @@ namespace erlent {
 
     class Message {
     public:
-        enum Type { GETATTR=42, READDIR, READ, WRITE, OPEN, TRUNCATE, CHMOD,
+        enum Type { GETATTR=42, ACCESS, READDIR, READ, WRITE,
+                    OPEN, TRUNCATE, CHMOD,
                     MKDIR, UNLINK, RMDIR };
     protected:
         Message() { }
@@ -169,6 +170,20 @@ namespace erlent {
         using Super::RequestWithPathnameTempl;
 
         void perform(std::ostream &os);
+        void performLocally();
+    };
+
+    class AccessReply : public ReplyTempl<Message::ACCESS> {
+    };
+
+    class AccessRequest : public RequestWithPathnameTempl<AccessReply, Message::ACCESS> {
+        int acc;
+    public:
+        AccessRequest() { }
+        AccessRequest(const char *pathname, int acc)
+            : RequestWithPathnameTempl(pathname), acc(acc) { }
+        void serialize(std::ostream &os) const;
+        void deserialize(std::istream &is);
         void performLocally();
     };
 
