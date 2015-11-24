@@ -47,8 +47,10 @@ static void usage(const char *progname)
          << "   -w DIR        change working directory to DIR after changing root" << endl
          << "   -C            set up /dev, /proc and /sys inside the new root" << endl
          << "   -m DIR:MNTPT  map DIR (from host) to MNTPT in new root" << endl
-         << "   -u UID        change user ID to UID" << endl
-         << "   -g GID        change group ID to GID" << endl
+         << "   -u UID        map UID to effective user  id" << endl
+         << "   -g GID        map GID ot effective group id" << endl
+         << "   -U I:O:C      map user  ids [I..I+C) to host users  [O..O+C)" << endl
+         << "   -G I:O:C      map group ids [I..I+C) to host groups [O..O+C)" << endl
          << "   -d            print a few debug messages" << endl
          << "   -h            print this help" << endl
          << "   CMD ARGS...   command to execute and its arguments" << endl;
@@ -62,13 +64,32 @@ static bool addBind(const string &arg, vector<pair<string,string>> &binds) {
     return true;
 }
 
+static bool addMapping(const string &arg, vector<Mapping> &mappings) {
+    long innerID, outerID, count;
+    char ch;
+    istringstream iss(arg);
+
+    iss >> innerID;
+    iss >> ch;
+    if (ch != ':')
+        return false;
+    iss >> outerID;
+    iss >> ch;
+    if (ch != ':')
+        return false;
+    iss >> count;
+    if (!iss.eof() || iss.fail())
+        return false;
+
+    mappings.push_back(Mapping(innerID, outerID, count));
+    return true;
+}
+
 int main(int argc, char *argv[])
 {
     int opt, usercmd;
     uid_t euid = geteuid();
     gid_t egid = getegid();
-    uid_t inner_uid = euid;
-    gid_t inner_gid = egid;
 
     ChildParams params;
 
@@ -77,7 +98,7 @@ int main(int argc, char *argv[])
 
     GlobalOptions::setDebug(false);
 
-    while ((opt = getopt(argc, argv, "+r:w:Cm:u:g:dh")) != -1) {
+    while ((opt = getopt(argc, argv, "+r:w:Cm:U:G:u:g:dh")) != -1) {
         switch(opt) {
         case 'r': params.newRoot = optarg; break;
         case 'w': params.newWorkDir = optarg; break;
@@ -88,14 +109,32 @@ int main(int argc, char *argv[])
                 return 1;
             }
             break;
-        case 'u': inner_uid = atol(optarg); break;
-        case 'g': inner_gid = atol(optarg); break;
+        case 'u': params.uidMappings.push_back(Mapping(atol(optarg), euid, 1)); break;
+        case 'g': params.gidMappings.push_back(Mapping(atol(optarg), egid, 1)); break;
+        case 'U':
+            if (!addMapping(optarg, params.uidMappings)) {
+                usage(argv[0]);
+                return 1;
+            }
+            break;
+        case 'G':
+            if (!addMapping(optarg, params.gidMappings)) {
+                usage(argv[0]);
+                return 1;
+            }
+            break;
         case 'd': GlobalOptions::setDebug(true); break;
         case 'h': usage(argv[0]); return 0;
         default:
             usage(argv[0]); return 1;
         }
     }
+
+    if (params.uidMappings.empty())
+        params.uidMappings.push_back(Mapping(euid, euid, 1));
+    if (params.gidMappings.empty())
+        params.gidMappings.push_back(Mapping(egid, egid, 1));
+
     usercmd = optind;
     if (usercmd >= argc) {
         // no command is given
@@ -118,7 +157,7 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
-    child_pid = setup_child(inner_uid, inner_gid, args, params);
+    child_pid = setup_child(args, params);
     run_child();
 
     return wait_for_pid(child_pid);

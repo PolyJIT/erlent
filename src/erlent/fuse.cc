@@ -228,8 +228,7 @@ static void sigchld_action(int signum, siginfo_t *si, void *ctx)
     kill(fuse_pid, SIGTERM);
 }
 
-int erlent_fuse(RequestProcessor &rp, bool devprocsys, const char *newWorkDir,
-        char *const *cmdArgs, uid_t new_uid, gid_t new_gid)
+int erlent_fuse(RequestProcessor &rp, char *const *cmdArgs, const ChildParams &params)
 {
     reqproc = &rp;
 
@@ -255,11 +254,7 @@ int erlent_fuse(RequestProcessor &rp, bool devprocsys, const char *newWorkDir,
     if (sigaction(SIGCLD, &sact, 0) == -1)
         errExit("sigaction");
 
-    ChildParams params;
-    params.newRoot = newroot;
-    params.newWorkDir = newWorkDir;
-    params.devprocsys = devprocsys;
-    child_pid = setup_child(new_uid, new_gid, cmdArgs, params);
+    child_pid = setup_child(cmdArgs, params);
     if (child_pid == -1)
         errExit("fork");
 

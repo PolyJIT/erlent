@@ -9,6 +9,7 @@ extern "C" {
 #include "erlent/child.hh"
 #include "erlent/erlent.hh"
 
+#include <sstream>
 
 using namespace std;
 using namespace erlent;
@@ -110,14 +111,96 @@ static void initComm() {
         perror("pipe/toparent");
 }
 
-static pid_t child_pid = 0;
+int uidmap_single(pid_t child_pid, uid_t new_uid, gid_t new_gid) {
+    cerr << "single " << new_uid << " " << new_gid << endl;
+    char str[200];
+    int fd;
+    uid_t euid = geteuid();
+    gid_t egid = getegid();
+
+    // gid_map can only be written when setgroups
+    // is disabled on newer kernels (for security
+    // reasons).
+    sprintf(str, "/proc/%d/setgroups", child_pid);
+    fd = open(str, O_WRONLY);
+    if (fd == -1) {
+        perror("open /proc/.../setgroups");
+        return -1;
+    }
+    sprintf(str, "deny");
+    if (write(fd, str, strlen(str)) == -1) {
+        perror("write setgroups");
+        return -1;
+    }
+    close(fd);
+
+    sprintf(str, "/proc/%d/uid_map", child_pid);
+    fd = open(str, O_WRONLY);
+    if (fd == -1) {
+        perror("open uid_map");
+        return -1;
+    }
+
+    sprintf(str,"%ld %ld 1\n", (long)new_uid, (long)euid);
+    if (write(fd, str, strlen(str)) == -1) {
+        perror("write uid");
+        return -1;
+    }
+    close(fd);
+
+    sprintf(str, "/proc/%d/gid_map", child_pid);
+    fd = open(str, O_WRONLY);
+    if (fd == -1) {
+        perror("open gid_map");
+        return -1;
+    }
+
+    sprintf(str,"%ld %ld 1\n", (long)new_gid, (long)egid);
+    if (write(fd, str, strlen(str)) == -1) {
+        perror("write gid");
+        return -1;
+    }
+    close(fd);
+    return 0;
+}
+
+int do_idmap(const char *cmd, pid_t child_pid, const std::vector<Mapping> &mappings) {
+    ostringstream oss;
+    oss << cmd << " " << dec << child_pid;
+    for (const Mapping &m : mappings) {
+        oss << " " << dec << m.innerID << " " << m.outerID << " " << m.count;
+    }
+    int res = system(oss.str().c_str());
+    if (res == -1) {
+        cerr << cmd << ": cannot invoke (error -1) ?!" << endl;
+        return -1;
+    } else if (WIFEXITED(res)) {
+        if (WEXITSTATUS(res) != 0) {
+            cerr << cmd << " failed: exit status " << WEXITSTATUS(res) << endl;
+            return -1;
+        }
+    } else {
+        cerr << cmd << " failed, no exit status." << endl;
+        return -1;
+    }
+
+    return 0;
+}
+
+int uidmap_sub(pid_t child_pid, const ChildParams &params) {
+    if (do_idmap("newuidmap", child_pid, params.uidMappings) != 0)
+        return -1;
+    if (do_idmap("newgidmap", child_pid, params.gidMappings) != 0)
+        return -1;
+    return 0;
+}
+
 static int child_res;
 
-pid_t setup_child(uid_t new_uid, gid_t new_gid,
-                  char *const *cmdArgs,
+pid_t setup_child(char *const *cmdArgs,
                   const ChildParams &params)
 {
-    int fd;
+    pid_t child_pid = 0;
 
     args = cmdArgs;
 
@@ -147,52 +230,16 @@ pid_t setup_child(uid_t new_uid, gid_t new_gid,
     close(tochild[0]);
     wait_child('U');
 
-    char str[200];
-    sprintf(str, "/proc/%d/uid_map", child_pid);
-    fd = open(str, O_WRONLY);
-    if (fd == -1) {
-        perror("open uid_map");
-        return -1;
+    uid_t euid = geteuid();
+    gid_t egid = getegid();
+    if (params.uidMappings.size() == 1 && params.uidMappings[0].count == 1 &&
+            params.gidMappings.size() == 1 && params.gidMappings[0].count == 1 &&
+            params.uidMappings[0].outerID == euid && params.gidMappings[0].outerID == egid) {
+        uidmap_single(child_pid, params.uidMappings[0].innerID,
+                params.gidMappings[0].innerID);
+    } else {
+        uidmap_sub(child_pid, params);
     }
-
-    long euid = geteuid();
-    sprintf(str,"%ld %ld 1\n", (long)new_uid, euid);
-    if (write(fd, str, strlen(str)) == -1) {
-        perror("write uid");
-        return -1;
-    }
-    close(fd);
-
-    // gid_map can only be written when setgroups
-    // is disabled on newer kernels (for security
-    // reasons).
-    sprintf(str, "/proc/%d/setgroups", child_pid);
-    fd = open(str, O_WRONLY);
-    if (fd == -1) {
-        perror("open /proc/.../setgroups");
-        return -1;
-    }
-    sprintf(str, "deny");
-    if (write(fd, str, strlen(str)) == -1) {
-        perror("write setgroups");
-        return -1;
-    }
-    close(fd);
-
-    sprintf(str, "/proc/%d/gid_map", child_pid);
-    fd = open(str, O_WRONLY);
-    if (fd == -1) {
-        perror("open gid_map");
-        return -1;
-    }
-
-    long egid = getegid();
-    sprintf(str,"%ld %ld 1\n", (long)new_gid, (long)egid);
-    if (write(fd, str, strlen(str)) == -1) {
-        perror("write gid");
-        return -1;
-    }
-    close(fd);
 
     return child_pid;
 }

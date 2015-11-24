@@ -68,34 +68,34 @@ static void usage(const char *progname)
 
 int main(int argc, char *argv[])
 {
+    ChildParams params;
     string chrootDir("/");
     LocalRequestProcessor reqproc;
     int opt, usercmd;
 
     uid_t euid = geteuid();
     gid_t egid = getegid();
-    uid_t inner_uid = euid;
-    gid_t inner_gid = egid;
 
     dbg() << unitbuf;
 
     char cwd[PATH_MAX];
-    char *newwd = getcwd(cwd, sizeof(cwd));
+    params.newWorkDir = getcwd(cwd, sizeof(cwd));
 
-    bool devprocsys = false;
     while ((opt = getopt(argc, argv, "+Cr:w:u:g:dh")) != -1) {
         switch(opt) {
-        case 'C': devprocsys = true; break;
+        case 'C': params.devprocsys = true; break;
         case 'r': chrootDir = optarg; break;
-        case 'w': newwd = optarg; break;
-        case 'u': inner_uid = atol(optarg); break;
-        case 'g': inner_gid = atol(optarg); break;
+        case 'w': params.newWorkDir = optarg; break;
+        case 'u': params.uidMappings.push_back(Mapping(atol(optarg), euid, 1)); break;
+        case 'g': params.gidMappings.push_back(Mapping(atol(optarg), egid, 1)); break;
         case 'd': GlobalOptions::setDebug(true); break;
         case 'h': usage(argv[0]); return 0;
         default:
             usage(argv[0]); return 1;
         }
     }
+    params.newRoot = chrootDir;
+
     usercmd = optind;
     if (usercmd >= argc) {
         // no command is given
@@ -111,5 +111,5 @@ int main(int argc, char *argv[])
 
     reqproc.addPathMapping(true, "", chrootDir);
 
-    return erlent_fuse(reqproc, devprocsys, newwd, args, inner_uid, inner_gid);
+    return erlent_fuse(reqproc, args, params);
 }

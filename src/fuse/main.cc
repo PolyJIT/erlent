@@ -61,19 +61,19 @@ static void usage(const char *progname)
 
 int main(int argc, char *argv[])
 {
+    ChildParams params;
     RemoteRequestProcessor reqproc;
     int opt, usercmd;
 
     dbg() << unitbuf;
 
     char cwd[PATH_MAX];
-    char *newwd = getcwd(cwd, sizeof(cwd));
+    params.newWorkDir = getcwd(cwd, sizeof(cwd));
 
-    bool devprocsys = false;
     while ((opt = getopt(argc, argv, "+Cw:dh")) != -1) {
         switch(opt) {
-        case 'C': devprocsys = true; break;
-        case 'w': newwd = optarg; break;
+        case 'C': params.devprocsys = true; break;
+        case 'w': params.newWorkDir = optarg; break;
         case 'd': GlobalOptions::setDebug(true); break;
         case 'h': usage(argv[0]); return 0;
         default:
@@ -95,5 +95,9 @@ int main(int argc, char *argv[])
 
     uid_t euid = geteuid();
     gid_t egid = getegid();
-    return erlent_fuse(reqproc, devprocsys, newwd, args, euid, egid);
+    if (params.uidMappings.empty())
+        params.uidMappings.push_back(Mapping(euid, euid, 1));
+    if (params.gidMappings.empty())
+        params.gidMappings.push_back(Mapping(egid, egid, 1));
+    return erlent_fuse(reqproc, args, params);
 }
