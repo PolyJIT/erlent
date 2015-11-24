@@ -69,10 +69,10 @@ int main(int argc, char *argv[])
     char cwd[PATH_MAX];
     char *newwd = getcwd(cwd, sizeof(cwd));
 
-    bool chrootDefaults = false;
+    bool devprocsys = false;
     while ((opt = getopt(argc, argv, "+Cw:dh")) != -1) {
         switch(opt) {
-        case 'C': chrootDefaults = true; break;
+        case 'C': devprocsys = true; break;
         case 'w': newwd = optarg; break;
         case 'd': GlobalOptions::setDebug(true); break;
         case 'h': usage(argv[0]); return 0;
@@ -93,13 +93,7 @@ int main(int argc, char *argv[])
         args[i] = argv[i+usercmd];
     args[n_args] = 0;
 
-    if (chrootDefaults) {
-        reqproc.addPathMapping(true, "/sys", "/sys");
-        reqproc.addPathMapping(true, "/proc", "/proc");
-        reqproc.addPathMapping(true, "/dev", "/dev");
-    }
-
     uid_t euid = geteuid();
     gid_t egid = getegid();
-    return erlent_fuse(reqproc, newwd, args, euid, egid);
+    return erlent_fuse(reqproc, devprocsys, newwd, args, euid, egid);
 }

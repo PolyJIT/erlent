@@ -1,5 +1,6 @@
 extern "C" {
 #include <fcntl.h>
+#include <sys/mount.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
@@ -47,9 +48,20 @@ static void wait_parent(char expected) {
 }
 
 
+void mnt(const char *src, const char *dst, const char *fstype, int flags) {
+    int res = mount(src, dst, fstype, flags, NULL);
+    if (res == -1) {
+        int err = errno;
+        cerr << "Mount of '" << src << "' at '" << dst << "' (type " << fstype
+             << ") failed: " << strerror(err) << endl;
+        exit(1);
+    }
+}
+
 static const char *newroot;
 static const char *newwd;
 static char *const *args;
+static bool mnt_devprocsys;
 
 static int childFunc(void *arg)
 {
@@ -59,6 +71,13 @@ static int childFunc(void *arg)
     dbg() << "newroot = " << newroot << endl;
     for (char *const *p=args; *p; ++p) {
         dbg() << " " << *p << endl;
+    }
+
+    if (mnt_devprocsys) {
+        string root = newroot;
+        mnt("proc", (root+"/proc").c_str(), "proc", MS_NODEV | MS_NOSUID | MS_NOEXEC);
+        mnt("/dev", (root+"/dev").c_str(), NULL, MS_BIND | MS_REC);
+        mnt("/sys", (root+"/sys").c_str(), NULL, MS_BIND | MS_REC);
     }
 
     if (chroot(newroot) == -1) {
@@ -71,10 +90,12 @@ static int childFunc(void *arg)
         cerr << "chdir failed: " << strerror(err) << endl;
     }
 
+    /*
     if (dup2(2, 1) == -1) {
         int err = errno;
         cerr << "dup2 failed: " << strerror(err) << endl;
     }
+    */
 
     execvp(args[0], args);
     int err = errno;
@@ -93,6 +114,7 @@ static pid_t child_pid = 0;
 static int child_res;
 
 pid_t setup_child(uid_t new_uid, gid_t new_gid,
+                  bool devprocsys,
                   const char *newRootDir,
                   const char *newWorkDir,
                   char *const *cmdArgs)
@@ -102,6 +124,7 @@ pid_t setup_child(uid_t new_uid, gid_t new_gid,
     newroot = newRootDir;
     newwd = newWorkDir;
     args = cmdArgs;
+    mnt_devprocsys = devprocsys;
 
     initComm();
 
@@ -112,9 +135,18 @@ pid_t setup_child(uid_t new_uid, gid_t new_gid,
     else if (child_pid == 0) {
         close(toparent[0]);
         close(tochild[1]);
-        unshare(CLONE_NEWUSER);
+        unshare(CLONE_NEWUSER | CLONE_NEWPID | CLONE_NEWNS);
+
         signal_parent('U');
-        childFunc(0);
+        pid_t p = fork();
+        if (p == -1) {
+            cerr << "fork (in child) failed." << endl;
+            exit(127);
+        } else if (p == 0)
+            childFunc(0);
+        else {
+            exit(wait_for_pid(p));
+        }
     }
     close(toparent[1]);
     close(tochild[0]);
@@ -172,4 +204,19 @@ pid_t setup_child(uid_t new_uid, gid_t new_gid,
 
 void run_child() {
     signal_child('I');
+}
+
+// return exit status of pid p
+int wait_for_pid(pid_t p) {
+    int status;
+    while (waitpid(p, &status, 0) == -1) {
+    }
+    int ex;
+    if (WIFEXITED(status))
+        ex = WEXITSTATUS(status);
+    else if (WIFSIGNALED(status))
+        ex = 128 + WTERMSIG(status);
+    else
+        ex = 255;
+    return ex;
 }

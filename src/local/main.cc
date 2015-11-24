@@ -82,10 +82,10 @@ int main(int argc, char *argv[])
     char cwd[PATH_MAX];
     char *newwd = getcwd(cwd, sizeof(cwd));
 
-    bool chrootDefaults = false;
+    bool devprocsys = false;
     while ((opt = getopt(argc, argv, "+Cr:w:u:g:dh")) != -1) {
         switch(opt) {
-        case 'C': chrootDefaults = true; break;
+        case 'C': devprocsys = true; break;
         case 'r': chrootDir = optarg; break;
         case 'w': newwd = optarg; break;
         case 'u': inner_uid = atol(optarg); break;
@@ -109,12 +109,7 @@ int main(int argc, char *argv[])
         args[i] = argv[i+usercmd];
     args[n_args] = 0;
 
-    if (chrootDefaults) {
-        reqproc.addPathMapping(true, "/sys", "/sys");
-        reqproc.addPathMapping(true, "/proc", "/proc");
-        reqproc.addPathMapping(true, "/dev", "/dev");
-    }
     reqproc.addPathMapping(true, "", chrootDir);
 
-    return erlent_fuse(reqproc, newwd, args, inner_uid, inner_gid);
+    return erlent_fuse(reqproc, devprocsys, newwd, args, inner_uid, inner_gid);
 }

@@ -24,7 +24,6 @@ using namespace std;
 using namespace erlent;
 
 static pid_t child_pid = 0;
-static int child_res = 0;
 
 extern "C"
 void sigchld_action(int signum, siginfo_t *si, void *ctx)
@@ -36,21 +35,6 @@ void sigchld_action(int signum, siginfo_t *si, void *ctx)
         return;
 
     dbg() << "sigchld_action: child process exited" << endl;
-    child_res = WIFEXITED(status) ? WEXITSTATUS(status) : 127;
-}
-
-static void cleanup()
-{
-    pid_t pid;
-    int status;
-
-    while ((pid = wait(&status)) != -1) {
-    }
-
-    if (errno != ECHILD) {
-        int err = errno;
-        cerr << "Error in wait: " << strerror(err) << "endl";
-    }
 }
 
 static void usage(const char *progname)
@@ -61,6 +45,7 @@ static void usage(const char *progname)
          << endl
          << "   -r DIR       new root directory" << endl
          << "   -w DIR       change working directory to DIR after changing root" << endl
+         << "   -C           set up /dev, /proc and /sys inside the new root" << endl
          << "   -u UID       change user ID to UID" << endl
          << "   -g GID       change group ID to GID" << endl
          << "   -d           print a few debug messages" << endl
@@ -71,6 +56,7 @@ static void usage(const char *progname)
 int main(int argc, char *argv[])
 {
     int opt, usercmd;
+    bool devprocsys = false;
     uid_t euid = geteuid();
     gid_t egid = getegid();
     uid_t inner_uid = euid;
@@ -79,15 +65,17 @@ int main(int argc, char *argv[])
     cerr << unitbuf;
     cout << unitbuf;
 
-    char cwd[PATH_MAX];
+    char cwd[PATH_MAX+1];
     const char *newwd = getcwd(cwd, sizeof(cwd));
+    cwd[PATH_MAX] = '\0';
     const char *newroot = "/";
     GlobalOptions::setDebug(false);
 
-    while ((opt = getopt(argc, argv, "+r:w:u:g:dh")) != -1) {
+    while ((opt = getopt(argc, argv, "+r:w:Cu:g:dh")) != -1) {
         switch(opt) {
         case 'r': newroot = optarg; break;
         case 'w': newwd = optarg; break;
+        case 'C': devprocsys = true; break;
         case 'd': GlobalOptions::setDebug(true); break;
         case 'u': inner_uid = atol(optarg); break;
         case 'g': inner_gid = atol(optarg); break;
@@ -118,11 +106,9 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
-    child_pid = setup_child(inner_uid, inner_gid, newroot, newwd, args);
+    child_pid = setup_child(inner_uid, inner_gid, devprocsys, newroot, newwd, args);
     run_child();
 
-    cleanup();
-
-    return child_res;
+    return wait_for_pid(child_pid);
 }
 
