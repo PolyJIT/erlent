@@ -58,34 +58,34 @@ void mnt(const char *src, const char *dst, const char *fstype, int flags) {
     }
 }
 
-static const char *newroot;
-static const char *newwd;
 static char *const *args;
-static bool mnt_devprocsys;
 
-static int childFunc(void *arg)
+static int childFunc(ChildParams params)
 {
     wait_parent('I');
 
-    dbg() << "newwd = " << newwd << endl;
-    dbg() << "newroot = " << newroot << endl;
+    dbg() << "newwd = " << params.newRoot << endl;
+    dbg() << "newroot = " << params.newWorkDir << endl;
     for (char *const *p=args; *p; ++p) {
         dbg() << " " << *p << endl;
     }
 
-    if (mnt_devprocsys) {
-        string root = newroot;
+    if (params.devprocsys) {
+        const string &root = params.newRoot;
         mnt("proc", (root+"/proc").c_str(), "proc", MS_NODEV | MS_NOSUID | MS_NOEXEC);
         mnt("/dev", (root+"/dev").c_str(), NULL, MS_BIND | MS_REC);
         mnt("/sys", (root+"/sys").c_str(), NULL, MS_BIND | MS_REC);
     }
+    for (const pair<string,string> &b : params.bindMounts) {
+        mnt(b.first.c_str(), (params.newRoot+"/"+b.second).c_str(), NULL, MS_BIND | MS_REC);
+    }
 
-    if (chroot(newroot) == -1) {
+    if (chroot(params.newRoot.c_str()) == -1) {
         int err = errno;
         cerr << "chroot failed: " << strerror(err) << endl;
     }
 
-    if (chdir(newwd) == -1) {
+    if (chdir(params.newWorkDir.c_str()) == -1) {
         int err = errno;
         cerr << "chdir failed: " << strerror(err) << endl;
     }
@@ -114,17 +114,12 @@ static pid_t child_pid = 0;
 static int child_res;
 
 pid_t setup_child(uid_t new_uid, gid_t new_gid,
-                  bool devprocsys,
-                  const char *newRootDir,
-                  const char *newWorkDir,
-                  char *const *cmdArgs)
+                  char *const *cmdArgs,
+                  const ChildParams &params)
 {
     int fd;
 
-    newroot = newRootDir;
-    newwd = newWorkDir;
     args = cmdArgs;
-    mnt_devprocsys = devprocsys;
 
     initComm();
 
@@ -143,7 +138,7 @@ pid_t setup_child(uid_t new_uid, gid_t new_gid,
             cerr << "fork (in child) failed." << endl;
             exit(127);
         } else if (p == 0)
-            childFunc(0);
+            childFunc(params);
         else {
             exit(wait_for_pid(p));
         }

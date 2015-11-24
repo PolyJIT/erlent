@@ -1,12 +1,23 @@
 #ifndef _ERLENT_CHILD_HH
 #define _ERLENT_CHILD_HH
 
+#include <string>
+#include <utility>
+#include <vector>
+
 extern "C" {
 #include <sys/types.h>
 }
 
-pid_t setup_child(uid_t new_uid, gid_t new_gid, bool devprocsys, const char *newRootDir, const char *newWorkDir,
-                  char *const *args);
+class ChildParams {
+public:
+    std::string newRoot = "/";
+    std::string newWorkDir = "/";
+    bool devprocsys = false;
+    std::vector<std::pair<std::string,std::string> > bindMounts;
+};
+
+pid_t setup_child(uid_t new_uid, gid_t new_gid, char *const *args, const ChildParams &params);
 void run_child();
 int wait_for_pid(pid_t p);
 

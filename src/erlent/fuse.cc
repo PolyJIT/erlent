@@ -255,7 +255,11 @@ int erlent_fuse(RequestProcessor &rp, bool devprocsys, const char *newWorkDir,
     if (sigaction(SIGCLD, &sact, 0) == -1)
         errExit("sigaction");
 
-    child_pid = setup_child(new_uid, new_gid, devprocsys, newroot, newWorkDir, cmdArgs);
+    ChildParams params;
+    params.newRoot = newroot;
+    params.newWorkDir = newWorkDir;
+    params.devprocsys = devprocsys;
+    child_pid = setup_child(new_uid, new_gid, cmdArgs, params);
     if (child_pid == -1)
         errExit("fork");
 

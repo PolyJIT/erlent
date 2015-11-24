@@ -43,42 +43,54 @@ static void usage(const char *progname)
          << endl
          << progname << " allows a user to perform a \"change root\" operation" << endl
          << endl
-         << "   -r DIR       new root directory" << endl
-         << "   -w DIR       change working directory to DIR after changing root" << endl
-         << "   -C           set up /dev, /proc and /sys inside the new root" << endl
-         << "   -u UID       change user ID to UID" << endl
-         << "   -g GID       change group ID to GID" << endl
-         << "   -d           print a few debug messages" << endl
-         << "   -h           print this help" << endl
-         << "   CMD ARGS...  command to execute and its arguments" << endl;
+         << "   -r DIR        new root directory" << endl
+         << "   -w DIR        change working directory to DIR after changing root" << endl
+         << "   -C            set up /dev, /proc and /sys inside the new root" << endl
+         << "   -m DIR:MNTPT  map DIR (from host) to MNTPT in new root" << endl
+         << "   -u UID        change user ID to UID" << endl
+         << "   -g GID        change group ID to GID" << endl
+         << "   -d            print a few debug messages" << endl
+         << "   -h            print this help" << endl
+         << "   CMD ARGS...   command to execute and its arguments" << endl;
+}
+
+static bool addBind(const string &arg, vector<pair<string,string>> &binds) {
+    size_t pos = arg.find(':');
+    if (pos == 0 || pos == string::npos)
+        return false;
+    binds.push_back(make_pair(arg.substr(0, pos), arg.substr(pos+1)));
+    return true;
 }
 
 int main(int argc, char *argv[])
 {
     int opt, usercmd;
-    bool devprocsys = false;
     uid_t euid = geteuid();
     gid_t egid = getegid();
     uid_t inner_uid = euid;
     gid_t inner_gid = egid;
 
+    ChildParams params;
+
     cerr << unitbuf;
     cout << unitbuf;
 
-    char cwd[PATH_MAX+1];
-    const char *newwd = getcwd(cwd, sizeof(cwd));
-    cwd[PATH_MAX] = '\0';
-    const char *newroot = "/";
     GlobalOptions::setDebug(false);
 
-    while ((opt = getopt(argc, argv, "+r:w:Cu:g:dh")) != -1) {
+    while ((opt = getopt(argc, argv, "+r:w:Cm:u:g:dh")) != -1) {
         switch(opt) {
-        case 'r': newroot = optarg; break;
-        case 'w': newwd = optarg; break;
-        case 'C': devprocsys = true; break;
-        case 'd': GlobalOptions::setDebug(true); break;
+        case 'r': params.newRoot = optarg; break;
+        case 'w': params.newWorkDir = optarg; break;
+        case 'C': params.devprocsys = true; break;
+        case 'm':
+            if (!addBind(optarg, params.bindMounts)) {
+                usage(argv[0]);
+                return 1;
+            }
+            break;
         case 'u': inner_uid = atol(optarg); break;
         case 'g': inner_gid = atol(optarg); break;
+        case 'd': GlobalOptions::setDebug(true); break;
         case 'h': usage(argv[0]); return 0;
         default:
             usage(argv[0]); return 1;
@@ -106,7 +118,7 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
-    child_pid = setup_child(inner_uid, inner_gid, devprocsys, newroot, newwd, args);
+    child_pid = setup_child(inner_uid, inner_gid, args, params);
     run_child();
 
     return wait_for_pid(child_pid);
