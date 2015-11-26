@@ -7,6 +7,6 @@
 #include <sys/types.h>
 
 int erlent_fuse(erlent::RequestProcessor &rp,
-                char *const *args, const ChildParams &params);
+                char *const *cmdArgs_, const ChildParams &params_);
 
 #endif // _ERLENT_FUSE_HH

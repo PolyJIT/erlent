@@ -169,14 +169,6 @@ static void errExit(const char *msg)
     exit(EXIT_FAILURE);
 }
 
-
-
-static void *erlent_init(struct fuse_conn_info *conn)
-{
-    run_child();
-    return 0;
-}
-
 static void cleanup()
 {
     // Wait for all remaining child processes (fuse may have
@@ -229,6 +221,17 @@ static void cleanup_tempdir() {
 
 static pid_t child_pid = 0, fuse_pid = 0;
 static int child_res = 0;
+static ChildParams params;
+static char *const *cmdArgs;
+
+static void *erlent_init(struct fuse_conn_info *conn)
+{
+    child_pid = setup_child(cmdArgs, params);
+    if (child_pid == -1)
+        errExit("fork");
+    run_child();
+    return 0;
+}
 
 static void sigchld_action(int signum, siginfo_t *si, void *ctx)
 {
@@ -244,8 +247,10 @@ static void sigchld_action(int signum, siginfo_t *si, void *ctx)
     kill(fuse_pid, SIGTERM);
 }
 
-int erlent_fuse(RequestProcessor &rp, char *const *cmdArgs, const ChildParams &params)
+int erlent_fuse(RequestProcessor &rp, char *const *cmdArgs_, const ChildParams &params_)
 {
+    cmdArgs = cmdArgs_;
+    params = params_;
     reqproc = &rp;
 
     char tempdirtempl[] = "/tmp/erlent.XXXXXX";
@@ -270,9 +275,7 @@ int erlent_fuse(RequestProcessor &rp, char *const *cmdArgs, const ChildParams &p
     if (sigaction(SIGCLD, &sact, 0) == -1)
         errExit("sigaction");
 
-    child_pid = setup_child(cmdArgs, params);
-    if (child_pid == -1)
-        errExit("fork");
+    params.newRoot = newroot;
 
     struct fuse_operations erlent_oper;
     memset(&erlent_oper, 0, sizeof(erlent_oper));

@@ -54,7 +54,10 @@ public:
 
 static void usage(const char *progname)
 {
-    cerr << "USAGE: " << progname << " [-l PATH] [-L PATH] [-w DIR] [-r DIR] [-d] [-h] [--] CMD ARGS..." << endl
+    cerr << "USAGE: " << progname << " <OPTIONS> [--] CMD ARGS..." << endl
+         << endl
+         << "Build time stamp: " << __DATE__ << " " << __TIME__ << endl
+         << endl
          << "   -r DIR       new root directory" << endl
          << "   -w DIR       change working directory to DIR" << endl
          << "   -C           use default -l/-L settings for chroots:" << endl
@@ -76,7 +79,7 @@ int main(int argc, char *argv[])
     uid_t euid = geteuid();
     gid_t egid = getegid();
 
-    dbg() << unitbuf;
+//    dbg() << unitbuf;
 
     char cwd[PATH_MAX];
     params.newWorkDir = getcwd(cwd, sizeof(cwd));
@@ -94,7 +97,11 @@ int main(int argc, char *argv[])
             usage(argv[0]); return 1;
         }
     }
-    params.newRoot = chrootDir;
+
+    if (params.uidMappings.empty())
+        params.uidMappings.push_back(Mapping(euid, euid, 1));
+    if (params.gidMappings.empty())
+        params.gidMappings.push_back(Mapping(egid, egid, 1));
 
     usercmd = optind;
     if (usercmd >= argc) {

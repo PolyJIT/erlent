@@ -112,7 +112,6 @@ static void initComm() {
 }
 
 int uidmap_single(pid_t child_pid, uid_t new_uid, gid_t new_gid) {
-    cerr << "single " << new_uid << " " << new_gid << endl;
     char str[200];
     int fd;
     uid_t euid = geteuid();
@@ -166,7 +165,6 @@ int uidmap_single(pid_t child_pid, uid_t new_uid, gid_t new_gid) {
 
 int do_idmap(const char *cmd, pid_t child_pid, const std::vector<Mapping> &mappings) {
     ostringstream oss;
-    oss << cmd << " " << dec << child_pid;
     for (const Mapping &m : mappings) {
         oss << " " << dec << m.innerID << " " << m.outerID << " " << m.count;
     }
@@ -232,13 +230,19 @@ pid_t setup_child(char *const *cmdArgs,
 
     uid_t euid = geteuid();
     gid_t egid = getegid();
+    int err = 0;
     if (params.uidMappings.size() == 1 && params.uidMappings[0].count == 1 &&
             params.gidMappings.size() == 1 && params.gidMappings[0].count == 1 &&
             params.uidMappings[0].outerID == euid && params.gidMappings[0].outerID == egid) {
-        uidmap_single(child_pid, params.uidMappings[0].innerID,
+        err = uidmap_single(child_pid, params.uidMappings[0].innerID,
                 params.gidMappings[0].innerID);
     } else {
-        uidmap_sub(child_pid, params);
+        err = uidmap_sub(child_pid, params);
+    }
+
+    if (err != 0) {
+        kill(child_pid, SIGTERM);
+        return -1;
     }
 
     return child_pid;
