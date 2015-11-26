@@ -41,7 +41,8 @@ static void usage(const char *progname)
 {
     cerr << "USAGE: " << progname << " <OPTIONS> [--] CMD ARGS..." << endl
          << endl
-         << progname << " allows a user to perform a \"change root\" operation" << endl
+         << progname << " allows a user to perform a \"change root\" operation." << endl
+         << "Build time stamp: " << __DATE__ << " " << __TIME__ << endl
          << endl
          << "   -r DIR        new root directory" << endl
          << "   -w DIR        change working directory to DIR after changing root" << endl
@@ -53,7 +54,8 @@ static void usage(const char *progname)
          << "   -G I:O:C      map group ids [I..I+C) to host groups [O..O+C)" << endl
          << "   -d            print a few debug messages" << endl
          << "   -h            print this help" << endl
-         << "   CMD ARGS...   command to execute and its arguments" << endl;
+         << "   CMD ARGS...   command to execute and its arguments" << endl
+         << endl;
 }
 
 static bool addBind(const string &arg, vector<pair<string,string>> &binds) {
