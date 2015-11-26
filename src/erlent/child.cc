@@ -1,8 +1,8 @@
 extern "C" {
 #include <fcntl.h>
 #include <sys/mount.h>
-#include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/wait.h>
 }
 
@@ -60,16 +60,18 @@ void mnt(const char *src, const char *dst, const char *fstype, int flags) {
 }
 
 static char *const *args;
-
+extern int pivot_root(const char * new_root,const char * put_old);
 static int childFunc(ChildParams params)
 {
     wait_parent('I');
 
     dbg() << "newwd = " << params.newRoot << endl;
     dbg() << "newroot = " << params.newWorkDir << endl;
+    dbg() << "command = ";
     for (char *const *p=args; *p; ++p) {
-        dbg() << " " << *p << endl;
+        dbg() << " " << *p;
     }
+    dbg() << endl;
 
     if (params.devprocsys) {
         const string &root = params.newRoot;
@@ -86,17 +88,36 @@ static int childFunc(ChildParams params)
         cerr << "chroot failed: " << strerror(err) << endl;
     }
 
+#if 0
+    chdir(params.newRoot.c_str());
+    if (syscall(__NR_pivot_root, ".", "./mnt") == -1) {
+        int err = errno;
+        cerr << "pivot_root failed: " << strerror(err) << endl;
+    }
+    chdir("/");
+#endif
     if (chdir(params.newWorkDir.c_str()) == -1) {
         int err = errno;
         cerr << "chdir failed: " << strerror(err) << endl;
     }
 
-    /*
+#if 0
+    cerr << "cwd = " << get_current_dir_name() << endl;
+
+    DIR *d = opendir("/");
+    struct dirent *de;
+    while ((de = readdir(d)) != NULL) {
+        cerr << de->d_name << endl;
+    }
+    closedir(d);
+#endif
+
+#if 0
     if (dup2(2, 1) == -1) {
         int err = errno;
         cerr << "dup2 failed: " << strerror(err) << endl;
     }
-    */
+#endif
 
     execvp(args[0], args);
     int err = errno;
