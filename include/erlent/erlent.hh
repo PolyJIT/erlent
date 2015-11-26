@@ -60,7 +60,7 @@ namespace erlent {
     class Message {
     public:
         enum Type { GETATTR=42, ACCESS, READDIR, READ, WRITE,
-                    OPEN, TRUNCATE, CHMOD,
+                    OPEN, TRUNCATE, CHMOD, CHOWN,
                     MKDIR, UNLINK, RMDIR };
     protected:
         Message() { }
@@ -317,6 +317,31 @@ namespace erlent {
         using RequestWithPathVal::RequestWithPathVal;
         void performLocally();
     };
+
+    class ChownReply : public ReplyTempl<Message::CHOWN> {
+    };
+
+    class ChownRequest : public RequestWithPathnameTempl<ChownReply, Message::CHOWN> {
+        uid_t uid;
+        gid_t gid;
+    public:
+        ChownRequest() { }
+        ChownRequest(const char *pathname, uid_t uid, gid_t gid)
+            : RequestWithPathnameTempl<ChownReply, Message::CHOWN>(pathname), uid(uid), gid(gid) { }
+        void serialize(std::ostream &os) const {
+            this->RequestWithPathnameTempl<ChownReply, Message::CHOWN>::serialize(os);
+            writenum(os, uid);
+            writenum(os, gid);
+        }
+        void deserialize(std::istream &is) {
+            this->RequestWithPathnameTempl<ChownReply, Message::CHOWN>::deserialize(is);
+            readnum(is, uid);
+            readnum(is, gid);
+        }
+
+        void performLocally();
+    };
+
 
     class MkdirReply : public ReplyTempl<Message::MKDIR> {
     };

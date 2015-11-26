@@ -19,22 +19,27 @@ using namespace erlent;
 #include <csignal>
 
 #include <limits>
+#include <map>
+#include <utility>
 #include <vector>
 
 using namespace std;
 
 static RequestProcessor *reqproc = nullptr;
 
+static map<string,pair<uid_t,gid_t>> chownMap;
+
 static int erlent_getattr(const char *path, struct stat *stbuf) {
     dbg() << "erlent_getattr on '" << path << "'" << endl;
     GetattrRequest req(path);
     req.getReply().init(stbuf);
     int res = reqproc->process(req);
-    if (res == 0 && S_ISCHR(stbuf->st_mode)) {
-        stbuf->st_mode &= ~S_IFCHR;
-        stbuf->st_mode |= S_IFREG;
-        stbuf->st_size = std::numeric_limits<off_t>::max();
+    auto it = chownMap.find(path);
+    if (res == 0 && it != chownMap.end()) {
+        stbuf->st_uid = it->second.first;
+        stbuf->st_gid = it->second.second;
     }
+
     return res;
 }
 
@@ -102,6 +107,17 @@ static int erlent_chmod(const char *path, mode_t mode) {
     dbg() << "erlent_chmod '" << path << "', mode " << hex << mode << endl;
     ChmodRequest req(path, mode);
     return reqproc->process(req);
+}
+
+static int erlent_chown(const char *path, uid_t uid, gid_t gid) {
+    cerr << "erlent_chown '" << path << "' " << dec << uid
+          << ':' << dec << gid << endl;
+#if 0
+    ChownRequest req(path, uid, gid);
+    return reqproc->process(req);
+#endif
+    chownMap[path] = make_pair(uid,gid);
+    return 0;
 }
 
 static int erlent_mkdir(const char *path, mode_t mode) {
@@ -271,6 +287,7 @@ int erlent_fuse(RequestProcessor &rp, char *const *cmdArgs, const ChildParams &p
     erlent_oper.access = erlent_access;
     erlent_oper.truncate = erlent_truncate;
     erlent_oper.chmod    = erlent_chmod;
+    erlent_oper.chown    = erlent_chown;
     erlent_oper.mkdir    = erlent_mkdir;
     erlent_oper.unlink   = erlent_unlink;
     erlent_oper.rmdir    = erlent_rmdir;

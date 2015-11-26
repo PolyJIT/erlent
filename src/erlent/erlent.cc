@@ -70,6 +70,7 @@ string Message::typeName(Message::Type ty)
     case OPEN:    return "Open";
     case TRUNCATE: return "Truncate";
     case CHMOD:    return "Chmod";
+    case CHOWN:    return "Chown";
     case MKDIR:    return "Mkdir";
     case UNLINK:   return "Unlink";
     case RMDIR:    return "Rmdir";
@@ -96,6 +97,7 @@ Request *Request::receive(istream &is)
     case OPEN:     req = new OpenRequest();     break;
     case TRUNCATE: req = new TruncateRequest(); break;
     case CHMOD:    req = new ChmodRequest();    break;
+    case CHOWN:    req = new ChownRequest();    break;
     case MKDIR:    req = new MkdirRequest();    break;
     case UNLINK:   req = new UnlinkRequest();   break;
     case RMDIR:    req = new RmdirRequest();    break;
@@ -390,6 +392,14 @@ void TruncateRequest::performLocally()
 void ChmodRequest::performLocally()
 {
     int res = chmod(getPathname().c_str(), val);
+    if (res < 0)
+        res = -errno;
+    getReply().setResult(res);
+}
+
+void ChownRequest::performLocally()
+{
+    int res = chown(getPathname().c_str(), uid, gid);
     if (res < 0)
         res = -errno;
     getReply().setResult(res);
