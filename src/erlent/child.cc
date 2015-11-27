@@ -186,20 +186,21 @@ int uidmap_single(pid_t child_pid, uid_t new_uid, gid_t new_gid) {
 
 int do_idmap(const char *cmd, pid_t child_pid, const std::vector<Mapping> &mappings) {
     ostringstream oss;
+    oss << cmd << " " << dec << child_pid;
     for (const Mapping &m : mappings) {
         oss << " " << dec << m.innerID << " " << m.outerID << " " << m.count;
     }
     int res = system(oss.str().c_str());
     if (res == -1) {
-        cerr << cmd << ": cannot invoke (error -1) ?!" << endl;
+        cerr << oss.str() << ": cannot invoke (error -1) ?!" << endl;
         return -1;
     } else if (WIFEXITED(res)) {
         if (WEXITSTATUS(res) != 0) {
-            cerr << cmd << " failed: exit status " << WEXITSTATUS(res) << endl;
+            cerr << oss.str() << " failed: exit status " << WEXITSTATUS(res) << endl;
             return -1;
         }
     } else {
-        cerr << cmd << " failed, no exit status." << endl;
+        cerr << oss.str() << " failed, no exit status." << endl;
         return -1;
     }
 
@@ -286,4 +287,34 @@ int wait_for_pid(pid_t p) {
     else
         ex = 255;
     return ex;
+}
+
+bool ChildParams::addBind(const string &str, vector<pair<string,string>> &binds) {
+    size_t pos = str.find(':');
+    if (pos == 0 || pos == string::npos)
+        return false;
+    binds.push_back(make_pair(str.substr(0, pos), str.substr(pos+1)));
+    return true;
+}
+
+bool ChildParams::addMapping(const string &str, std::vector<Mapping> &mappings)
+{
+    long innerID, outerID, count;
+    char ch;
+    istringstream iss(str);
+
+    iss >> innerID;
+    iss >> ch;
+    if (ch != ':')
+        return false;
+    iss >> outerID;
+    iss >> ch;
+    if (ch != ':')
+        return false;
+    iss >> count;
+    if (!iss.eof() || iss.fail())
+        return false;
+
+    mappings.push_back(Mapping(innerID, outerID, count));
+    return true;
 }

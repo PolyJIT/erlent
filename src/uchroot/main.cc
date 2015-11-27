@@ -58,35 +58,6 @@ static void usage(const char *progname)
          << endl;
 }
 
-static bool addBind(const string &arg, vector<pair<string,string>> &binds) {
-    size_t pos = arg.find(':');
-    if (pos == 0 || pos == string::npos)
-        return false;
-    binds.push_back(make_pair(arg.substr(0, pos), arg.substr(pos+1)));
-    return true;
-}
-
-static bool addMapping(const string &arg, vector<Mapping> &mappings) {
-    long innerID, outerID, count;
-    char ch;
-    istringstream iss(arg);
-
-    iss >> innerID;
-    iss >> ch;
-    if (ch != ':')
-        return false;
-    iss >> outerID;
-    iss >> ch;
-    if (ch != ':')
-        return false;
-    iss >> count;
-    if (!iss.eof() || iss.fail())
-        return false;
-
-    mappings.push_back(Mapping(innerID, outerID, count));
-    return true;
-}
-
 int main(int argc, char *argv[])
 {
     int opt, usercmd;
@@ -106,7 +77,7 @@ int main(int argc, char *argv[])
         case 'w': params.newWorkDir = optarg; break;
         case 'C': params.devprocsys = true; break;
         case 'm':
-            if (!addBind(optarg, params.bindMounts)) {
+            if (!ChildParams::addBind(optarg, params.bindMounts)) {
                 usage(argv[0]);
                 return 1;
             }
@@ -114,13 +85,13 @@ int main(int argc, char *argv[])
         case 'u': params.uidMappings.push_back(Mapping(atol(optarg), euid, 1)); break;
         case 'g': params.gidMappings.push_back(Mapping(atol(optarg), egid, 1)); break;
         case 'U':
-            if (!addMapping(optarg, params.uidMappings)) {
+            if (!ChildParams::addMapping(optarg, params.uidMappings)) {
                 usage(argv[0]);
                 return 1;
             }
             break;
         case 'G':
-            if (!addMapping(optarg, params.gidMappings)) {
+            if (!ChildParams::addMapping(optarg, params.gidMappings)) {
                 usage(argv[0]);
                 return 1;
             }

@@ -25,9 +25,14 @@ public:
     std::string newRoot = "/";
     std::string newWorkDir = "/";
     bool devprocsys = false;
-    std::vector<std::pair<std::string,std::string> > bindMounts;
+    std::vector<std::pair<std::string,std::string>> bindMounts;
+
     std::vector<Mapping> uidMappings;
     std::vector<Mapping> gidMappings;
+
+public:
+    static bool addBind(const std::string &str, std::vector<std::pair<std::string,std::string>> &binds);
+    static bool addMapping(const std::string &str, std::vector<Mapping> &mappings);
 };
 
 pid_t setup_child(char *const *args, const ChildParams &params);

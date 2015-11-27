@@ -97,13 +97,31 @@ int main(int argc, char *argv[])
     char cwd[PATH_MAX];
     params.newWorkDir = getcwd(cwd, sizeof(cwd));
 
-    while ((opt = getopt(argc, argv, "+Cr:w:u:g:dh")) != -1) {
+    while ((opt = getopt(argc, argv, "+r:w:Cm:u:g:U:G:dh")) != -1) {
         switch(opt) {
-        case 'C': params.devprocsys = true; break;
         case 'r': chrootDir = optarg; break;
         case 'w': params.newWorkDir = optarg; break;
+        case 'C': params.devprocsys = true; break;
+        case 'm':
+            if (!ChildParams::addBind(optarg, params.bindMounts)) {
+                usage(argv[0]);
+                return 1;
+            }
+            break;
         case 'u': params.uidMappings.push_back(Mapping(atol(optarg), euid, 1)); break;
         case 'g': params.gidMappings.push_back(Mapping(atol(optarg), egid, 1)); break;
+        case 'U':
+            if (!ChildParams::addMapping(optarg, params.uidMappings)) {
+                usage(argv[0]);
+                return 1;
+            }
+            break;
+        case 'G':
+            if (!ChildParams::addMapping(optarg, params.gidMappings)) {
+                usage(argv[0]);
+                return 1;
+            }
+            break;
         case 'd': GlobalOptions::setDebug(true); break;
         case 'h': usage(argv[0]); return 0;
         default:
