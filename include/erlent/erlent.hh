@@ -59,9 +59,9 @@ namespace erlent {
 
     class Message {
     public:
-        enum Type { GETATTR=42, ACCESS, READDIR, READ, WRITE,
-                    OPEN, TRUNCATE, CHMOD, CHOWN,
-                    MKDIR, UNLINK, RMDIR };
+        enum Type { GETATTR=42, ACCESS, READDIR, READLINK,
+                    READ, WRITE, OPEN, TRUNCATE, CHMOD, CHOWN,
+                    MKDIR, UNLINK, RMDIR, SYMLINK };
     protected:
         Message() { }
         virtual ~Message() { }
@@ -195,8 +195,6 @@ namespace erlent {
         void serialize(std::ostream &os) const;
         void deserialize(std::istream &is);
 
-        Message::Type getMessageType() const { return Message::READDIR; }
-
         void addName(const std::string &name) { names.push_back(name); }
 
         name_iterator names_begin() const { return names.begin(); }
@@ -204,6 +202,29 @@ namespace erlent {
     };
 
     class ReaddirRequest : public RequestWithPathnameTempl<ReaddirReply, Message::READDIR> {
+    public:
+        using Super::RequestWithPathnameTempl;
+
+        void performLocally();
+    };
+
+    class ReadlinkReply : public ReplyTempl<Message::READLINK> {
+        std::string target;
+    public:
+        void serialize(std::ostream &os) const {
+            this->ReplyTempl<Message::READLINK>::serialize(os);
+            writestr(os, target);
+        }
+        void deserialize(std::istream &is) {
+            this->ReplyTempl<Message::READLINK>::deserialize(is);
+            readstr(is, target);
+        }
+
+        void setTarget(const char *t) { target = t; }
+        const std::string &getTarget() const { return target; }
+    };
+
+    class ReadlinkRequest : public RequestWithPathnameTempl<ReadlinkReply, Message::READLINK> {
     public:
         using Super::RequestWithPathnameTempl;
 
@@ -339,6 +360,26 @@ namespace erlent {
             readnum(is, gid);
         }
 
+        void performLocally();
+    };
+
+    class SymlinkReply : public ReplyTempl<Message::SYMLINK> {
+    };
+
+    class SymlinkRequest : public RequestWithPathnameTempl<SymlinkReply,Message::SYMLINK> {
+        std::string from;
+    public:
+        SymlinkRequest() { }
+        SymlinkRequest(const char *from, const char *to)
+            : RequestWithPathnameTempl<SymlinkReply,Message::SYMLINK>(to), from(from) { }
+        void serialize(std::ostream &os) const {
+            this->RequestWithPathnameTempl<SymlinkReply,Message::SYMLINK>::serialize(os);
+            writestr(os, from);
+        }
+        void deserialize(std::istream &is) {
+            this->RequestWithPathnameTempl<SymlinkReply,Message::SYMLINK>::deserialize(is);
+            readstr(is, from);
+        }
         void performLocally();
     };
 

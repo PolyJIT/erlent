@@ -62,16 +62,18 @@ istream &erlent::readstr(istream &is, string &str) {
 string Message::typeName(Message::Type ty)
 {
     switch(ty) {
-    case GETATTR: return "Getattr";
-    case ACCESS:  return "Access";
-    case READDIR: return "Readdir";
-    case READ:    return "Read";
-    case WRITE:   return "Write";
-    case OPEN:    return "Open";
+    case GETATTR:  return "Getattr";
+    case ACCESS:   return "Access";
+    case READDIR:  return "Readdir";
+    case READLINK: return "Readlink";
+    case READ:     return "Read";
+    case WRITE:    return "Write";
+    case OPEN:     return "Open";
     case TRUNCATE: return "Truncate";
     case CHMOD:    return "Chmod";
     case CHOWN:    return "Chown";
     case MKDIR:    return "Mkdir";
+    case SYMLINK:  return "Symlink";
     case UNLINK:   return "Unlink";
     case RMDIR:    return "Rmdir";
     }
@@ -92,6 +94,7 @@ Request *Request::receive(istream &is)
     case GETATTR:  req = new GetattrRequest();  break;
     case ACCESS:   req = new AccessRequest();   break;
     case READDIR:  req = new ReaddirRequest();  break;
+    case READLINK: req = new ReadlinkRequest(); break;
     case READ:     req = new ReadRequest();     break;
     case WRITE:    req = new WriteRequest();    break;
     case OPEN:     req = new OpenRequest();     break;
@@ -99,6 +102,7 @@ Request *Request::receive(istream &is)
     case CHMOD:    req = new ChmodRequest();    break;
     case CHOWN:    req = new ChownRequest();    break;
     case MKDIR:    req = new MkdirRequest();    break;
+    case SYMLINK:  req = new SymlinkRequest();  break;
     case UNLINK:   req = new UnlinkRequest();   break;
     case RMDIR:    req = new RmdirRequest();    break;
     }
@@ -220,8 +224,8 @@ void GetattrRequest::performLocally()
 {
     GetattrReply &repl = getReply();
     const string &pathname = getPathname();
-    dbg() << "stating '" << pathname << "'." << endl;
-    int res = stat(pathname.c_str(), repl.getStbuf());
+    dbg() << "(l)stating '" << pathname << "'." << endl;
+    int res = lstat(pathname.c_str(), repl.getStbuf());
     if (res == -1)
         res = -errno;
     repl.setResult(res);
@@ -499,5 +503,30 @@ void AccessRequest::performLocally()
     int res = access(getPathname().c_str(), acc);
     if (res < 0)
         res = -errno;
+    getReply().setResult(res);
+}
+
+
+void SymlinkRequest::performLocally()
+{
+    int res = symlink(from.c_str(), getPathname().c_str());
+    if (res < 0)
+        res = -errno;
+    getReply().setResult(res);
+}
+
+
+void ReadlinkRequest::performLocally()
+{
+    char target[PATH_MAX+1];
+    int res = readlink(getPathname().c_str(), target, PATH_MAX);
+    if (res == -1) {
+        res = -errno;
+    } else {
+        // readlink does NOT 0-terminate the result string
+        target[res] = '\0';
+        getReply().setTarget(target);
+        res = 0;
+    }
     getReply().setResult(res);
 }

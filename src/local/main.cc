@@ -37,27 +37,7 @@ public:
         Reply &repl = req.getReply();
         RequestWithPathname *rwp = dynamic_cast<RequestWithPathname *>(&req);
         if (rwp != nullptr) {
-            // follow symlinks (translate each target in the chain
-            // to a local path)
-            do {
-                const char *path = rwp->getPathname().c_str();
-                char target[PATH_MAX+1];
-                dbg() << "performing request on '" << path << "'" << endl;
-                ssize_t s = readlink(path, target, PATH_MAX);
-                if (s == -1)
-                    break;
-                target[s] = '\0';
-                if (target[0] == '/') {
-                    rwp->setPathname(target);
-                } else {
-                    // relative path, does not filter "/../../../.." constructs!
-                    string::size_type d = rwp->getPathname().find_last_of('/');
-                    if (d != string::npos)
-                        rwp->setPathname(rwp->getPathname().substr(0,d+1) + target);
-                    else
-                        rwp->setPathname(target);
-                }
-            } while(true);
+            dbg() << "performing request on '" << rwp->getPathname() << "'" << endl;
         }
         req.performLocally();
         dbg() << "(local) result is " << repl.getResultMessage() << endl;

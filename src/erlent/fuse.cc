@@ -64,7 +64,13 @@ static int erlent_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 }
 
 static int erlent_readlink(const char *path, char *result, size_t size) {
-    return -ENOSYS;
+    dbg() << "erlent_readlink for '" << path << "'." << endl;
+    ReadlinkRequest req(path);
+    int res = reqproc->process(req);
+    if (res == 0) {
+        strncpy(result, req.getReply().getTarget().c_str(), size);
+    }
+    return res;
 }
 
 static int erlent_open(const char *path, struct fuse_file_info *fi)
@@ -149,6 +155,12 @@ static int erlent_mknod(const char *path, mode_t mode, dev_t dev)
 {
     dbg() << "erlent_mknod '" << path << "'." << endl;
     return -ENOSYS;
+}
+
+static int erlent_symlink(const char *from, const char *to) {
+    dbg() << "erlent_symlink '" << from << "' -> '" << to << "'." << endl;
+    SymlinkRequest req(from, to);
+    return reqproc->process(req);
 }
 
 static int erlent_flush(const char *path, struct fuse_file_info *fi)
@@ -287,6 +299,7 @@ int erlent_fuse(RequestProcessor &rp, char *const *cmdArgs_, const ChildParams &
     erlent_oper.write = erlent_write;
     erlent_oper.create = erlent_create;
     erlent_oper.mknod  = erlent_mknod;
+    erlent_oper.symlink = erlent_symlink;
     erlent_oper.access = erlent_access;
     erlent_oper.truncate = erlent_truncate;
     erlent_oper.chmod    = erlent_chmod;
