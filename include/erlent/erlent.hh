@@ -3,6 +3,7 @@
 
 #include <cstring>
 #include <cstdint>
+#include <functional>
 #include <ostream>
 #include <iostream>
 #include <set>
@@ -60,7 +61,7 @@ namespace erlent {
     class Message {
     public:
         enum Type { GETATTR=42, ACCESS, READDIR, READLINK,
-                    READ, WRITE, OPEN, TRUNCATE, CHMOD, CHOWN,
+                    READ, WRITE, OPEN, CREAT, TRUNCATE, CHMOD, CHOWN,
                     MKDIR, UNLINK, RMDIR, SYMLINK };
     protected:
         Message() { }
@@ -110,7 +111,6 @@ namespace erlent {
     class RequestWithPathname : public Request {
         std::string pathname;
 
-//        typedef RequestWithPathnameTempl<ReplyTy,MsgType> Super;
     public:
         RequestWithPathname() { }
         RequestWithPathname(const char *pathname)
@@ -141,15 +141,31 @@ namespace erlent {
         ReplyTy reply;
     public:
         using RequestWithPathname::RequestWithPathname;
-        /*
-        RequestWithPathnameTempl() : RequestWithPathname() { }
-        RequestWithPathnameTempl(const char *pathname)
-            : RequestWithPathname(pathname) { }
-            */
+
     public:
         Message::Type getMessageType() const { return MsgType; }
 
         ReplyTy &getReply() { return reply; }
+    };
+
+    template<typename ReplyTy, Message::Type MsgType, typename VALTY>
+    class RequestWithPathVal : public RequestWithPathnameTempl<ReplyTy, MsgType> {
+    protected:
+        VALTY val;
+    public:
+        RequestWithPathVal() { }
+        RequestWithPathVal(const char *pathname, VALTY val)
+            : RequestWithPathnameTempl<ReplyTy, MsgType>(pathname), val(val) { }
+
+        void serialize(std::ostream &os) const {
+            this->RequestWithPathnameTempl<ReplyTy, MsgType>::serialize(os);
+            writenum(os, val);
+        }
+
+        void deserialize(std::istream &is) {
+            this->RequestWithPathnameTempl<ReplyTy, MsgType>::deserialize(is);
+            readnum(is, val);
+        }
     };
 
 
@@ -199,6 +215,8 @@ namespace erlent {
 
         name_iterator names_begin() const { return names.begin(); }
         name_iterator names_end()   const { return names.end();   }
+
+        void filter(std::function<bool (const std::string&)> pred);
     };
 
     class ReaddirRequest : public RequestWithPathnameTempl<ReaddirReply, Message::READDIR> {
@@ -284,6 +302,28 @@ namespace erlent {
         void performLocally();
     };
 
+    class CreatReply : public ReplyTempl<Message::CREAT> {
+    };
+
+    class CreatRequest : public RequestWithPathnameTempl<CreatReply,Message::CREAT> {
+        mode_t mode;
+        uid_t  uid;
+        gid_t  gid;
+    public:
+        CreatRequest() { }
+        CreatRequest(const char *pathname, mode_t mode, uid_t uid, gid_t gid)
+            : RequestWithPathnameTempl(pathname), mode(mode), uid(uid), gid(gid) { }
+
+        mode_t getMode() const { return mode; }
+        uid_t getUid() const { return uid; }
+        gid_t getGid() const { return gid; }
+
+        void serialize(std::ostream &os) const;
+        void deserialize(std::istream &is);
+
+        void performLocally();
+    };
+
     class OpenReply : public ReplyTempl<Message::OPEN> {
     };
 
@@ -295,30 +335,13 @@ namespace erlent {
         OpenRequest(const char *pathname, int flags, mode_t mode)
             : RequestWithPathnameTempl(pathname), flags(flags), mode(mode) { }
 
+        int getFlags() const   { return flags; }
+        mode_t getMode() const { return mode; }
+
         void serialize(std::ostream &os) const;
         void deserialize(std::istream &is);
 
         void performLocally();
-    };
-
-    template<typename ReplyTy, Message::Type MsgType, typename VALTY>
-    class RequestWithPathVal : public RequestWithPathnameTempl<ReplyTy, MsgType> {
-    protected:
-        VALTY val;
-    public:
-        RequestWithPathVal() { }
-        RequestWithPathVal(const char *pathname, VALTY val)
-            : RequestWithPathnameTempl<ReplyTy, MsgType>(pathname), val(val) { }
-
-        void serialize(std::ostream &os) const {
-            this->RequestWithPathnameTempl<ReplyTy, MsgType>::serialize(os);
-            writenum(os, val);
-        }
-
-        void deserialize(std::istream &is) {
-            this->RequestWithPathnameTempl<ReplyTy, MsgType>::deserialize(is);
-            readnum(is, val);
-        }
     };
 
     class TruncateReply : public ReplyTempl<Message::TRUNCATE> {
@@ -337,6 +360,8 @@ namespace erlent {
     public:
         using RequestWithPathVal::RequestWithPathVal;
         void performLocally();
+
+        mode_t getMode() const { return val; }
     };
 
     class ChownReply : public ReplyTempl<Message::CHOWN> {
@@ -349,6 +374,8 @@ namespace erlent {
         ChownRequest() { }
         ChownRequest(const char *pathname, uid_t uid, gid_t gid)
             : RequestWithPathnameTempl<ChownReply, Message::CHOWN>(pathname), uid(uid), gid(gid) { }
+        uid_t getUid() const { return uid; }
+        gid_t getGid() const { return gid; }
         void serialize(std::ostream &os) const {
             this->RequestWithPathnameTempl<ChownReply, Message::CHOWN>::serialize(os);
             writenum(os, uid);
@@ -387,9 +414,32 @@ namespace erlent {
     class MkdirReply : public ReplyTempl<Message::MKDIR> {
     };
 
-    class MkdirRequest : public RequestWithPathVal<MkdirReply, Message::MKDIR, mode_t> {
+    class MkdirRequest : public RequestWithPathnameTempl<MkdirReply, Message::MKDIR> {
+        mode_t mode;
+        uid_t  uid;
+        gid_t  gid;
     public:
-        using RequestWithPathVal::RequestWithPathVal;
+        MkdirRequest() { }
+        MkdirRequest(const char *pathname, mode_t mode, uid_t uid, gid_t gid)
+            : RequestWithPathnameTempl(pathname), mode(mode), uid(uid), gid(gid) { }
+
+        mode_t getMode() const { return mode; }
+        uid_t getUid() const { return uid; }
+        gid_t getGid() const { return gid; }
+
+        void serialize(std::ostream &os) const {
+            this->RequestWithPathnameTempl::serialize(os);
+            writenum(os, mode);
+            writenum(os, uid);
+            writenum(os, gid);
+        }
+        void deserialize(std::istream &is) {
+            this->RequestWithPathnameTempl::deserialize(is);
+            readnum(is, mode);
+            readnum(is, uid);
+            readnum(is, gid);
+        }
+
         void performLocally();
     };
 

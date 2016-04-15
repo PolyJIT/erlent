@@ -69,6 +69,7 @@ string Message::typeName(Message::Type ty)
     case READ:     return "Read";
     case WRITE:    return "Write";
     case OPEN:     return "Open";
+    case CREAT:    return "Creat";
     case TRUNCATE: return "Truncate";
     case CHMOD:    return "Chmod";
     case CHOWN:    return "Chown";
@@ -98,6 +99,7 @@ Request *Request::receive(istream &is)
     case READ:     req = new ReadRequest();     break;
     case WRITE:    req = new WriteRequest();    break;
     case OPEN:     req = new OpenRequest();     break;
+    case CREAT:    req = new CreatRequest();    break;
     case TRUNCATE: req = new TruncateRequest(); break;
     case CHMOD:    req = new ChmodRequest();    break;
     case CHOWN:    req = new ChownRequest();    break;
@@ -174,6 +176,7 @@ void ReaddirRequest::performLocally()
         errno = 0;
         struct dirent *de = readdir(dir);
         while (de) {
+            // cerr << " ### " << de->d_name << endl;
             rr.addName(de->d_name);
             errno = 0;
             de = readdir(dir);
@@ -207,6 +210,17 @@ void ReaddirReply::deserialize(istream &is)
         string str;
         readstr(is, str);
         names.push_back(str);
+    }
+}
+
+void ReaddirReply::filter(std::function<bool (const string &)> pred)
+{
+    auto it = names.begin();
+    while (it != names.end()) {
+        if (!pred(*it))
+            it = names.erase(it);
+        else
+            ++it;
     }
 }
 
@@ -411,7 +425,7 @@ void ChownRequest::performLocally()
 
 void MkdirRequest::performLocally()
 {
-    int res = mkdir(getPathname().c_str(), val);
+    int res = mkdir(getPathname().c_str(), mode);
     if (res < 0)
         res = -errno;
     getReply().setResult(res);
@@ -528,5 +542,33 @@ void ReadlinkRequest::performLocally()
         getReply().setTarget(target);
         res = 0;
     }
+    getReply().setResult(res);
+}
+
+
+void CreatRequest::serialize(ostream &os) const
+{
+    this->RequestWithPathname::serialize(os);
+    writenum(os, mode);
+    writenum(os, uid);
+    writenum(os, gid);
+}
+
+void CreatRequest::deserialize(istream &is)
+{
+    this->RequestWithPathname::deserialize(is);
+    readnum(is, mode);
+    readnum(is, uid);
+    readnum(is, gid);
+}
+
+void CreatRequest::performLocally()
+{
+    int res = 0;
+    int fd = creat(getPathname().c_str(), mode);
+    if (fd == -1)
+        res = -errno;
+    else
+        close(fd);
     getReply().setResult(res);
 }

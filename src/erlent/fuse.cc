@@ -27,20 +27,11 @@ using namespace std;
 
 static RequestProcessor *reqproc = nullptr;
 
-static map<string,pair<uid_t,gid_t>> chownMap;
-
 static int erlent_getattr(const char *path, struct stat *stbuf) {
     dbg() << "erlent_getattr on '" << path << "'" << endl;
     GetattrRequest req(path);
     req.getReply().init(stbuf);
-    int res = reqproc->process(req);
-    auto it = chownMap.find(path);
-    if (res == 0 && it != chownMap.end()) {
-        stbuf->st_uid = it->second.first;
-        stbuf->st_gid = it->second.second;
-    }
-
-    return res;
+    return reqproc->process(req);
 }
 
 static int erlent_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
@@ -118,17 +109,14 @@ static int erlent_chmod(const char *path, mode_t mode) {
 static int erlent_chown(const char *path, uid_t uid, gid_t gid) {
     cerr << "erlent_chown '" << path << "' " << dec << uid
           << ':' << dec << gid << endl;
-#if 0
     ChownRequest req(path, uid, gid);
     return reqproc->process(req);
-#endif
-    chownMap[path] = make_pair(uid,gid);
-    return 0;
 }
 
 static int erlent_mkdir(const char *path, mode_t mode) {
     dbg() << "erlent_mkdir '" << path << "'." << endl;
-    MkdirRequest req(path, mode);
+    struct fuse_context *ctx = fuse_get_context();
+    MkdirRequest req(path, mode, ctx->uid, ctx->gid);
     return reqproc->process(req);
 }
 
@@ -147,7 +135,8 @@ static int erlent_rmdir(const char *path) {
 static int erlent_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 {
     dbg() << "erlent_create '" << path << "'." << endl;
-    OpenRequest req(path, O_CREAT|O_WRONLY|O_TRUNC, mode);
+    struct fuse_context *ctx = fuse_get_context();
+    CreatRequest req(path, mode, ctx->uid, ctx->gid);
     return reqproc->process(req);
 }
 
@@ -316,7 +305,10 @@ int erlent_fuse(RequestProcessor &rp, char *const *cmdArgs_, const ChildParams &
     else if (fuse_pid == 0) {
         char *fuse_args[] = {
             strdup("erlent-fuse"), strdup("-f"), strdup("-s"),
-            strdup("-o"), strdup("auto_unmount"), strdup(newroot)
+            strdup("-o"), strdup("auto_unmount"),
+            strdup("-o"), strdup("allow_other"),
+            strdup("-o"), strdup("default_permissions"),
+            strdup(newroot)
         };
         int fuse_argc = sizeof(fuse_args)/sizeof(*fuse_args);
         exit(fuse_main(fuse_argc, fuse_args, &erlent_oper, NULL));
