@@ -75,8 +75,12 @@ string Message::typeName(Message::Type ty)
     case CHOWN:    return "Chown";
     case MKDIR:    return "Mkdir";
     case SYMLINK:  return "Symlink";
+    case LINK:     return "Link";
+    case RENAME:   return "Rename";
     case UNLINK:   return "Unlink";
     case RMDIR:    return "Rmdir";
+    case UTIMENS:  return "Utimens";
+    case STATFS:   return "Statfs";
     }
     return "(unknown, missing in Message::typeName)";
 }
@@ -105,8 +109,12 @@ Request *Request::receive(istream &is)
     case CHOWN:    req = new ChownRequest();    break;
     case MKDIR:    req = new MkdirRequest();    break;
     case SYMLINK:  req = new SymlinkRequest();  break;
+    case LINK:     req = new LinkRequest();     break;
+    case RENAME:   req = new RenameRequest();   break;
     case UNLINK:   req = new UnlinkRequest();   break;
     case RMDIR:    req = new RmdirRequest();    break;
+    case UTIMENS:  req = new UtimensRequest();  break;
+    case STATFS:   req = new StatfsRequest();   break;
     }
 
     // We do not use a default: case since GCC generates
@@ -470,19 +478,38 @@ void RequestProcessor::addPathMapping(bool doLocally, const string &inside, cons
     sort(paths.begin(), paths.end(), less);
 }
 
+static string pathConcat(const string &p1, const string &p2) {
+    if (p1[p1.length()-1] == '/' && p2.length() > 0 && p2[0] == '/')
+        return p1 + p2.substr(1);
+    return p1 + p2;
+}
+
 void RequestProcessor::makePathLocal(Request &req) const {
     RequestWithPathname *rwp = dynamic_cast<RequestWithPathname *>(&req);
     if (rwp == nullptr)
         return;
     const string &pathname = rwp->getPathname();
+    rwp->setPathname(makePathLocal(pathname));
+
+    RequestWithTwoPathnames *rw2p = dynamic_cast<RequestWithTwoPathnames *>(&req);
+    if (rw2p != nullptr) {
+        rw2p->setPathname2(makePathLocal(rw2p->getPathname2()));
+    }
+}
+
+string RequestProcessor::makePathLocal(const string &pathname) const
+{
+    // only translate absolute paths, i.e., path beginning with '/'.
+    if (pathname.find('/') != 0)
+        return pathname;
     std::vector<PathProp>::const_iterator it, end = paths.end();
     for (it=paths.begin(); it!=end; ++it) {
         const PathProp &pp = *it;
         if (pathname.find(pp.insidePath) == 0) {
-            rwp->setPathname(pp.outsidePath + pathname.substr(pp.insidePath.length()));
-            return;
+            return pathConcat(pp.outsidePath, pathname.substr(pp.insidePath.length()));
         }
     }
+    return pathname;
 }
 
 bool RequestProcessor::doLocally(const Request &req) const {
@@ -523,7 +550,7 @@ void AccessRequest::performLocally()
 
 void SymlinkRequest::performLocally()
 {
-    int res = symlink(from.c_str(), getPathname().c_str());
+    int res = symlink(getPathname().c_str(), getPathname2().c_str());
     if (res < 0)
         res = -errno;
     getReply().setResult(res);
@@ -571,4 +598,93 @@ void CreatRequest::performLocally()
     else
         close(fd);
     getReply().setResult(res);
+}
+
+ostream &erlent::writetimespec(ostream &os, const struct timespec &ts)
+{
+    writenum(os, ts.tv_sec);
+    writenum(os, ts.tv_nsec);
+    return os;
+}
+
+istream &erlent::readtimespec(istream &is, struct timespec &ts)
+{
+    readnum(is, ts.tv_sec);
+    readnum(is, ts.tv_nsec);
+    return is;
+}
+
+void UtimensRequest::performLocally()
+{
+    int res = 0;
+    if (utimensat(-1, getPathname().c_str(), times, AT_SYMLINK_NOFOLLOW) == -1)
+        res = -errno;
+    getReply().setResult(res);
+}
+
+void RenameRequest::performLocally()
+{
+    int res = 0;
+    if (rename(getPathname().c_str(), getPathname2().c_str()) == -1)
+        res = -errno;
+    getReply().setResult(res);
+}
+
+void LinkRequest::performLocally()
+{
+    int res = 0;
+    if (link(getPathname().c_str(), getPathname2().c_str()) == -1)
+        res = -errno;
+    getReply().setResult(res);
+}
+
+void StatfsReply::serialize(ostream &os) const
+{
+    this->ReplyTempl::serialize(os);
+    writenum(os, buf->f_bsize);
+    writenum(os, buf->f_frsize);
+    writenum(os, buf->f_blocks);
+    writenum(os, buf->f_bfree);
+    writenum(os, buf->f_bavail);
+    writenum(os, buf->f_files);
+    writenum(os, buf->f_ffree);
+    writenum(os, buf->f_favail);
+    writenum(os, buf->f_fsid);
+    writenum(os, buf->f_flag);
+    writenum(os, buf->f_namemax);
+}
+
+void StatfsReply::deserialize(istream &is)
+{
+    this->ReplyTempl::deserialize(is);
+    readnum(is, buf->f_bsize);
+    readnum(is, buf->f_frsize);
+    readnum(is, buf->f_blocks);
+    readnum(is, buf->f_bfree);
+    readnum(is, buf->f_bavail);
+    readnum(is, buf->f_files);
+    readnum(is, buf->f_ffree);
+    readnum(is, buf->f_favail);
+    readnum(is, buf->f_fsid);
+    readnum(is, buf->f_flag);
+    readnum(is, buf->f_namemax);
+
+}
+
+void StatfsRequest::perform(ostream &os)
+{
+    StatfsReply &r = getReply();
+    struct statvfs data;
+    r.init(&data);
+    performLocally();
+    r.serialize(os);
+}
+
+void StatfsRequest::performLocally()
+{
+    int res = 0;
+    StatfsReply &repl = getReply();
+    if (statvfs(getPathname().c_str(), repl.getStatvfsBuf()) == -1)
+        res = -errno;
+    repl.setResult(res);
 }

@@ -35,15 +35,22 @@ static const mode_t ATTR_MASK = S_ISUID | S_ISGID | S_ISVTX | S_IRWXU | S_IRWXG 
 class LocalRequestProcessor : public RequestProcessor
 {
 private:
+    // We assume that 'pathname' does NOT end with '/'.
+    // When "/" or a path without "/" is passed in, we return "/".
     string dirof(const string &pathname) {
         string::size_type pos = pathname.rfind('/');
-        if (pos == string::npos)
+        if (pos == 0 || pos == string::npos)
             return "/";
-        return pathname.substr(0, pos);
+        const string &d = pathname.substr(0, pos);
+        return d;
     }
 
-    static int openAttrsFile(const string &pathname, int flags) {
-        return open((pathname + emuSuffix).c_str(), flags, S_IRUSR | S_IWUSR);
+    string attrsFileName(const string &pathname) {
+        return pathname + emuSuffix;
+    }
+
+    int openAttrsFile(const string &pathname, int flags) {
+        return open(attrsFileName(pathname).c_str(), flags, filemode);
     }
 
     struct Attrs {
@@ -52,7 +59,7 @@ private:
         mode_t mode;
     };
 
-    static int readAttrs(const string &pathname, Attrs *a) {
+    int readAttrs(const string &pathname, Attrs *a) {
         int fd = openAttrsFile(pathname, O_RDONLY);
         if (fd == -1 && errno == ENOENT) {
             struct stat buf;
@@ -68,8 +75,8 @@ private:
         return s == sizeof(*a) ? 0 : -1;
     }
 
-    static int writeAttrs(const string &pathname, const Attrs *a) {
-        cerr << "writeAttrs for '" << pathname << "'" << endl;
+    int writeAttrs(const string &pathname, const Attrs *a) {
+        dbg() << "writeAttrs for '" << pathname << "'" << endl;
         int fd = openAttrsFile(pathname, O_WRONLY | O_CREAT | O_TRUNC);
         if (fd == -1)
             return -1;
@@ -104,10 +111,12 @@ private:
     }
 
     void emu_creat_mkdir(Reply &repl, const string &pathname, mode_t mode, uid_t uid, gid_t gid) {
-        Attrs a;
+        Attrs a, dirA;
+        if (readAttrs(dirof(pathname), &dirA) == -1)
+            return;
         a.mode = mode & ATTR_MASK;
         a.uid  = uid;
-        a.gid  = gid;
+        a.gid  = (dirA.mode & S_ISGID) ? dirA.gid : gid;
         if (writeAttrs(pathname, &a) == -1)
             repl.setResult(-EIO);
     }
@@ -118,6 +127,8 @@ private:
     }
 
     bool attr_emulation = true;
+    mode_t filemode = S_IRUSR | S_IWUSR;
+    mode_t dirmode  = S_IRWXU;
 public:
     int process(Request &req) override {
         makePathLocal(req);
@@ -134,35 +145,68 @@ public:
             CreatRequest *creatreq = dynamic_cast<CreatRequest *>(&req);
             MkdirRequest *mkdirreq = dynamic_cast<MkdirRequest *>(&req);
             ReaddirRequest *readdirreq = dynamic_cast<ReaddirRequest *>(&req);
+            UnlinkRequest *unlinkreq = dynamic_cast<UnlinkRequest *>(&req);
+            RmdirRequest *rmdirreq = dynamic_cast<RmdirRequest *>(&req);
+            RenameRequest *renamereq = dynamic_cast<RenameRequest *>(&req);
+            LinkRequest *linkreq = dynamic_cast<LinkRequest *>(&req);
             if (chownreq != nullptr) {
                 emu_chown(repl, *pathname, chownreq->getUid(), chownreq->getGid());
             } else if (chmodreq != nullptr) {
                 emu_chmod(repl, *pathname, chmodreq->getMode());
             } else if (creatreq != nullptr) {
+                mode_t origMode = creatreq->getMode();
+                creatreq->setMode(filemode);
                 creatreq->performLocally();
                 if (repl.getResult() == 0)
-                    emu_creat_mkdir(repl, *pathname, creatreq->getMode(), creatreq->getUid(), creatreq->getGid());
+                    emu_creat_mkdir(repl, *pathname, origMode, creatreq->getUid(), creatreq->getGid());
             } else if (mkdirreq != nullptr) {
+                mode_t origMode = mkdirreq->getMode();
+                mkdirreq->setMode(dirmode);
                 mkdirreq->performLocally();
                 if (repl.getResult() == 0)
-                    emu_creat_mkdir(repl, *pathname, mkdirreq->getMode(), mkdirreq->getUid(), mkdirreq->getGid());
+                    emu_creat_mkdir(repl, *pathname, origMode, mkdirreq->getUid(), mkdirreq->getGid());
+            } else if (linkreq != nullptr) {
+                linkreq->performLocally();
+                if (repl.getResult() == 0) {
+                    int res = link(attrsFileName(linkreq->getPathname()).c_str(),
+                                   attrsFileName(linkreq->getPathname2()).c_str());
+                    if (res == -1)
+                        repl.setResult(-EIO);
+                }
             } else if (getattrreq != nullptr) {
                 GetattrReply &garepl = getattrreq->getReply();
                 getattrreq->performLocally();
                 if (garepl.getResult() == 0) {
                     Attrs a;
+                    struct stat *buf = garepl.getStbuf();
                     if (readAttrs(*pathname, &a) == 0) {
-                        struct stat *buf = garepl.getStbuf();
                         buf->st_uid = a.uid;
                         buf->st_gid = a.gid;
                         buf->st_mode = (buf->st_mode & ~ATTR_MASK) | (a.mode & ATTR_MASK);
-                    } else
-                        garepl.setResult(-EIO);
+                    } else {
+                        buf->st_uid = 0;
+                        buf->st_gid = 0;
+                        buf->st_mode = buf->st_mode & ~(S_IRWXG | S_IRWXO);
+                    }
                 }
             } else if (readdirreq != nullptr) {
                 readdirreq->performLocally();
                 ReaddirReply &rdr = readdirreq->getReply();
                 rdr.filter([](const string &name) { return !isEmuFile(name); });
+            } else if (unlinkreq != nullptr) {
+                unlinkreq->performLocally();
+                if (repl.getResult() == 0)
+                    unlink(attrsFileName(unlinkreq->getPathname()).c_str());
+            } else if (rmdirreq != nullptr) {
+                rmdirreq->performLocally();
+                if (repl.getResult() == 0)
+                    unlink(attrsFileName(rmdirreq->getPathname()).c_str());
+            } else if (renamereq != nullptr) {
+                renamereq->performLocally();
+                if (repl.getResult() == 0) {
+                    rename(attrsFileName(renamereq->getPathname()).c_str(),
+                           attrsFileName(renamereq->getPathname2()).c_str());
+                }
             } else
                 req.performLocally();
         } else

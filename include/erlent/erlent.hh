@@ -10,8 +10,9 @@
 #include <vector>
 
 extern "C" {
-#include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
+#include <sys/types.h>
 #include <unistd.h>
 }
 
@@ -30,7 +31,9 @@ namespace erlent {
     std::ostream &dbg();
 
     std::ostream &writestr(std::ostream &os, const std::string &str);
-    std::istream &readstr (std::istream &is, std::string &str);
+    std::istream &readstr (std::istream &is,       std::string &str);
+    std::ostream &writetimespec(std::ostream &os, const struct timespec &ts);
+    std::istream &readtimespec (std::istream &is,       struct timespec &ts);
 
     template<typename T>
     static inline std::ostream &writenum(std::ostream &os, T value) {
@@ -62,7 +65,8 @@ namespace erlent {
     public:
         enum Type { GETATTR=42, ACCESS, READDIR, READLINK,
                     READ, WRITE, OPEN, CREAT, TRUNCATE, CHMOD, CHOWN,
-                    MKDIR, UNLINK, RMDIR, SYMLINK };
+                    MKDIR, UNLINK, RMDIR, UTIMENS, SYMLINK, LINK, RENAME,
+                    STATFS };
     protected:
         Message() { }
         virtual ~Message() { }
@@ -141,6 +145,46 @@ namespace erlent {
         ReplyTy reply;
     public:
         using RequestWithPathname::RequestWithPathname;
+
+    public:
+        Message::Type getMessageType() const { return MsgType; }
+
+        ReplyTy &getReply() { return reply; }
+    };
+
+    class RequestWithTwoPathnames : public RequestWithPathname {
+        std::string pathname2;
+
+    public:
+        RequestWithTwoPathnames() { }
+        RequestWithTwoPathnames(const char *pathname, const char *pathname2)
+            : RequestWithPathname(pathname), pathname2(pathname2) { }
+        const std::string &getPathname2() const { return pathname2; }
+        void setPathname2(const char *pathname2) {
+            this->pathname2 = pathname2;
+        }
+        void setPathname2(const std::string &pathname2) {
+            this->pathname2 = pathname2;
+        }
+
+        void serialize(std::ostream &os) const {
+            this->RequestWithPathname::serialize(os);
+            writestr(os, pathname2);
+        }
+
+        void deserialize(std::istream &is) {
+            this->RequestWithPathname::deserialize(is);
+            readstr(is, pathname2);
+        }
+    };
+
+    template<typename ReplyTy, enum Message::Type MsgType>
+    class RequestWithTwoPathnamesTempl : public RequestWithTwoPathnames {
+    protected:
+        typedef RequestWithTwoPathnamesTempl<ReplyTy,MsgType> Super;
+        ReplyTy reply;
+    public:
+        using RequestWithTwoPathnames::RequestWithTwoPathnames;
 
     public:
         Message::Type getMessageType() const { return MsgType; }
@@ -314,6 +358,7 @@ namespace erlent {
         CreatRequest(const char *pathname, mode_t mode, uid_t uid, gid_t gid)
             : RequestWithPathnameTempl(pathname), mode(mode), uid(uid), gid(gid) { }
 
+        void setMode(mode_t mode) { this->mode = mode; }
         mode_t getMode() const { return mode; }
         uid_t getUid() const { return uid; }
         gid_t getGid() const { return gid; }
@@ -393,20 +438,18 @@ namespace erlent {
     class SymlinkReply : public ReplyTempl<Message::SYMLINK> {
     };
 
-    class SymlinkRequest : public RequestWithPathnameTempl<SymlinkReply,Message::SYMLINK> {
-        std::string from;
+    class SymlinkRequest : public RequestWithTwoPathnamesTempl<SymlinkReply,Message::SYMLINK> {
     public:
-        SymlinkRequest() { }
-        SymlinkRequest(const char *from, const char *to)
-            : RequestWithPathnameTempl<SymlinkReply,Message::SYMLINK>(to), from(from) { }
-        void serialize(std::ostream &os) const {
-            this->RequestWithPathnameTempl<SymlinkReply,Message::SYMLINK>::serialize(os);
-            writestr(os, from);
-        }
-        void deserialize(std::istream &is) {
-            this->RequestWithPathnameTempl<SymlinkReply,Message::SYMLINK>::deserialize(is);
-            readstr(is, from);
-        }
+        using RequestWithTwoPathnamesTempl::RequestWithTwoPathnamesTempl;
+        void performLocally();
+    };
+
+    class LinkReply : public ReplyTempl<Message::LINK> {
+    };
+
+    class LinkRequest : public RequestWithTwoPathnamesTempl<LinkReply,Message::LINK> {
+    public:
+        using RequestWithTwoPathnamesTempl::RequestWithTwoPathnamesTempl;
         void performLocally();
     };
 
@@ -423,6 +466,7 @@ namespace erlent {
         MkdirRequest(const char *pathname, mode_t mode, uid_t uid, gid_t gid)
             : RequestWithPathnameTempl(pathname), mode(mode), uid(uid), gid(gid) { }
 
+        void setMode(mode_t mode) { this->mode = mode; }
         mode_t getMode() const { return mode; }
         uid_t getUid() const { return uid; }
         gid_t getGid() const { return gid; }
@@ -461,6 +505,62 @@ namespace erlent {
         void performLocally();
     };
 
+    class UtimensReply : public ReplyTempl<Message::UTIMENS> {
+    };
+
+    class UtimensRequest : public RequestWithPathnameTempl<UtimensReply, Message::UTIMENS> {
+        struct timespec times[2];
+    public:
+        UtimensRequest() { }
+        UtimensRequest(const char *pathname, const struct timespec times[2])
+            : RequestWithPathnameTempl(pathname) {
+            this->times[0] = times[0];
+            this->times[1] = times[1];
+        }
+
+        void serialize(std::ostream &os) const override {
+            this->RequestWithPathname::serialize(os);
+            writetimespec(os, times[0]);
+            writetimespec(os, times[1]);
+        }
+        void deserialize(std::istream &is) override {
+            this->RequestWithPathname::deserialize(is);
+            readtimespec(is, times[0]);
+            readtimespec(is, times[1]);
+        }
+
+        void performLocally();
+    };
+
+    class RenameReply : public ReplyTempl<Message::RENAME> {
+    };
+
+    class RenameRequest : public RequestWithTwoPathnamesTempl<RmdirReply, Message::RENAME> {
+        std::string to;
+    public:
+        using RequestWithTwoPathnamesTempl::RequestWithTwoPathnamesTempl;
+
+        void performLocally();
+    };
+
+
+    class StatfsReply : public ReplyTempl<Message::STATFS> {
+        struct statvfs *buf;
+    public:
+        void init(struct statvfs *buf) { this->buf = buf; }
+        struct statvfs *getStatvfsBuf() { return buf; }
+        void serialize(std::ostream &os) const override;
+        void deserialize(std::istream &is) override;
+    };
+
+    class StatfsRequest : public RequestWithPathnameTempl<StatfsReply, Message::STATFS> {
+    public:
+        using RequestWithPathnameTempl::RequestWithPathnameTempl;
+        void perform(std::ostream &os);
+        void performLocally();
+    };
+
+
     class RequestProcessor {
     private:
         struct PathProp {
@@ -482,6 +582,7 @@ namespace erlent {
         bool doLocally(const Request &req) const;
         bool doLocally(const std::string &pathname) const;
         void makePathLocal(Request &req) const;
+        std::string makePathLocal(const std::string &pathname) const;
     };
 }
 

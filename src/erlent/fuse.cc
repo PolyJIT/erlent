@@ -107,7 +107,7 @@ static int erlent_chmod(const char *path, mode_t mode) {
 }
 
 static int erlent_chown(const char *path, uid_t uid, gid_t gid) {
-    cerr << "erlent_chown '" << path << "' " << dec << uid
+    dbg() << "erlent_chown '" << path << "' " << dec << uid
           << ':' << dec << gid << endl;
     ChownRequest req(path, uid, gid);
     return reqproc->process(req);
@@ -126,9 +126,21 @@ static int erlent_unlink(const char *path) {
     return reqproc->process(req);
 }
 
+static int erlent_rename(const char *from, const char *to) {
+    dbg() << "erlent_rename '" << from << "' -> '" << to << "'." << endl;
+    RenameRequest req(from, to);
+    return reqproc->process(req);
+}
+
 static int erlent_rmdir(const char *path) {
     dbg() << "erlent_rmdir '" << path << "'." << endl;
     RmdirRequest req(path);
+    return reqproc->process(req);
+}
+
+static int erlent_utimens(const char *path, const struct timespec tv[2]) {
+    dbg() << "erlent_utimens '" << path << "'." << endl;
+    UtimensRequest req(path, tv);
     return reqproc->process(req);
 }
 
@@ -149,6 +161,19 @@ static int erlent_mknod(const char *path, mode_t mode, dev_t dev)
 static int erlent_symlink(const char *from, const char *to) {
     dbg() << "erlent_symlink '" << from << "' -> '" << to << "'." << endl;
     SymlinkRequest req(from, to);
+    return reqproc->process(req);
+}
+
+static int erlent_link(const char *from, const char *to) {
+    dbg() << "erlent_link '" << from << "' -> '" << to << "'." << endl;
+    LinkRequest req(from, to);
+    return reqproc->process(req);
+}
+
+static int erlent_statfs(const char *path, struct statvfs *buf) {
+    dbg() << "erlent_statfs '" << path << "'." << endl;
+    StatfsRequest req(path);
+    req.getReply().init(buf);
     return reqproc->process(req);
 }
 
@@ -288,15 +313,19 @@ int erlent_fuse(RequestProcessor &rp, char *const *cmdArgs_, const ChildParams &
     erlent_oper.write = erlent_write;
     erlent_oper.create = erlent_create;
     erlent_oper.mknod  = erlent_mknod;
-    erlent_oper.symlink = erlent_symlink;
-    erlent_oper.access = erlent_access;
+    erlent_oper.symlink  = erlent_symlink;
+    erlent_oper.link     = erlent_link;
+    erlent_oper.access   = erlent_access;
     erlent_oper.truncate = erlent_truncate;
     erlent_oper.chmod    = erlent_chmod;
     erlent_oper.chown    = erlent_chown;
     erlent_oper.mkdir    = erlent_mkdir;
     erlent_oper.unlink   = erlent_unlink;
+    erlent_oper.rename   = erlent_rename;
     erlent_oper.rmdir    = erlent_rmdir;
+    erlent_oper.utimens  = erlent_utimens;
     erlent_oper.flush    = erlent_flush;
+    erlent_oper.statfs   = erlent_statfs;
     erlent_oper.init     = erlent_init;
 
     fuse_pid = fork();
@@ -308,6 +337,7 @@ int erlent_fuse(RequestProcessor &rp, char *const *cmdArgs_, const ChildParams &
             strdup("-o"), strdup("auto_unmount"),
             strdup("-o"), strdup("allow_other"),
             strdup("-o"), strdup("default_permissions"),
+            //strdup("-d"),
             strdup(newroot)
         };
         int fuse_argc = sizeof(fuse_args)/sizeof(*fuse_args);
