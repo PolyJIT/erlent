@@ -63,7 +63,7 @@ namespace erlent {
 
     class Message {
     public:
-        enum Type { GETATTR=42, ACCESS, READDIR, READLINK,
+        enum Type { GETATTR=42, ACCESS, READDIR, READLINK, MKNOD,
                     READ, WRITE, OPEN, CREAT, TRUNCATE, CHMOD, CHOWN,
                     MKDIR, UNLINK, RMDIR, UTIMENS, SYMLINK, LINK, RENAME,
                     STATFS };
@@ -409,27 +409,71 @@ namespace erlent {
         mode_t getMode() const { return val; }
     };
 
-    class ChownReply : public ReplyTempl<Message::CHOWN> {
-    };
 
-    class ChownRequest : public RequestWithPathnameTempl<ChownReply, Message::CHOWN> {
+    class UidGid {
+    private:
         uid_t uid;
         gid_t gid;
     public:
-        ChownRequest() { }
-        ChownRequest(const char *pathname, uid_t uid, gid_t gid)
-            : RequestWithPathnameTempl<ChownReply, Message::CHOWN>(pathname), uid(uid), gid(gid) { }
+        void setUid(uid_t uid) { this->uid = uid; }
+        void setGid(gid_t gid) { this->gid = gid; }
         uid_t getUid() const { return uid; }
         gid_t getGid() const { return gid; }
         void serialize(std::ostream &os) const {
-            this->RequestWithPathnameTempl<ChownReply, Message::CHOWN>::serialize(os);
             writenum(os, uid);
             writenum(os, gid);
         }
         void deserialize(std::istream &is) {
-            this->RequestWithPathnameTempl<ChownReply, Message::CHOWN>::deserialize(is);
             readnum(is, uid);
             readnum(is, gid);
+        }
+    };
+
+    class Mode {
+    private:
+        mode_t mode;
+    public:
+        void setMode(mode_t mode) { this->mode = mode; }
+        mode_t getMode() const { return mode; }
+        void serialize(std::ostream &os) const { writenum(os, mode); }
+        void deserialize(std::istream &is) { readnum(is, mode); }
+    };
+
+    class MknodReply : public ReplyTempl<Message::MKNOD> {
+    };
+
+    class MknodRequest : public RequestWithPathVal<MknodReply, Message::MKNOD, dev_t>, public UidGid, public Mode {
+    public:
+        using RequestWithPathVal::RequestWithPathVal;
+        void serialize(std::ostream &os) const {
+            this->RequestWithPathVal::serialize(os);
+            this->UidGid::serialize(os);
+            this->Mode::serialize(os);
+        }
+        void deserialize(std::istream &is) {
+            this->RequestWithPathVal::deserialize(is);
+            this->UidGid::deserialize(is);
+            this->Mode::deserialize(is);
+        }
+
+        void performLocally();
+    };
+
+    class ChownReply : public ReplyTempl<Message::CHOWN> {
+    };
+
+    class ChownRequest : public RequestWithPathnameTempl<ChownReply, Message::CHOWN>, public UidGid {
+    public:
+        ChownRequest() { }
+        ChownRequest(const char *pathname)
+            : RequestWithPathnameTempl<ChownReply, Message::CHOWN>(pathname) { }
+        void serialize(std::ostream &os) const {
+            this->RequestWithPathnameTempl<ChownReply, Message::CHOWN>::serialize(os);
+            this->UidGid::serialize(os);
+        }
+        void deserialize(std::istream &is) {
+            this->RequestWithPathnameTempl<ChownReply, Message::CHOWN>::deserialize(is);
+            this->UidGid::deserialize(is);
         }
 
         void performLocally();
@@ -438,9 +482,18 @@ namespace erlent {
     class SymlinkReply : public ReplyTempl<Message::SYMLINK> {
     };
 
-    class SymlinkRequest : public RequestWithTwoPathnamesTempl<SymlinkReply,Message::SYMLINK> {
+    class SymlinkRequest : public RequestWithTwoPathnamesTempl<SymlinkReply,Message::SYMLINK>, public UidGid {
     public:
         using RequestWithTwoPathnamesTempl::RequestWithTwoPathnamesTempl;
+        void serialize(std::ostream &os) const {
+            this->RequestWithTwoPathnamesTempl::serialize(os);
+            this->UidGid::serialize(os);
+        }
+        void deserialize(std::istream &is) {
+            this->RequestWithTwoPathnamesTempl::deserialize(is);
+            this->UidGid::deserialize(is);
+        }
+
         void performLocally();
     };
 

@@ -64,6 +64,7 @@ string Message::typeName(Message::Type ty)
     switch(ty) {
     case GETATTR:  return "Getattr";
     case ACCESS:   return "Access";
+    case MKNOD:    return "Mknod";
     case READDIR:  return "Readdir";
     case READLINK: return "Readlink";
     case READ:     return "Read";
@@ -98,6 +99,7 @@ Request *Request::receive(istream &is)
     switch(msgtype) {
     case GETATTR:  req = new GetattrRequest();  break;
     case ACCESS:   req = new AccessRequest();   break;
+    case MKNOD:    req = new MknodRequest();    break;
     case READDIR:  req = new ReaddirRequest();  break;
     case READLINK: req = new ReadlinkRequest(); break;
     case READ:     req = new ReadRequest();     break;
@@ -425,7 +427,7 @@ void ChmodRequest::performLocally()
 
 void ChownRequest::performLocally()
 {
-    int res = chown(getPathname().c_str(), uid, gid);
+    int res = chown(getPathname().c_str(), getUid(), getGid());
     if (res < 0)
         res = -errno;
     getReply().setResult(res);
@@ -687,4 +689,12 @@ void StatfsRequest::performLocally()
     if (statvfs(getPathname().c_str(), repl.getStatvfsBuf()) == -1)
         res = -errno;
     repl.setResult(res);
+}
+
+void MknodRequest::performLocally()
+{
+    int res = 0;
+    if (mknod(getPathname().c_str(), getMode(), val) == -1)
+        res = -errno;
+    getReply().setResult(res);
 }

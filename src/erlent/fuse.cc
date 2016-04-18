@@ -109,7 +109,9 @@ static int erlent_chmod(const char *path, mode_t mode) {
 static int erlent_chown(const char *path, uid_t uid, gid_t gid) {
     dbg() << "erlent_chown '" << path << "' " << dec << uid
           << ':' << dec << gid << endl;
-    ChownRequest req(path, uid, gid);
+    ChownRequest req(path);
+    req.setUid(uid);
+    req.setGid(gid);
     return reqproc->process(req);
 }
 
@@ -155,12 +157,20 @@ static int erlent_create(const char *path, mode_t mode, struct fuse_file_info *f
 static int erlent_mknod(const char *path, mode_t mode, dev_t dev)
 {
     dbg() << "erlent_mknod '" << path << "'." << endl;
-    return -ENOSYS;
+    MknodRequest req(path, dev);
+    req.setMode(mode);
+    struct fuse_context *ctx = fuse_get_context();
+    req.setUid(ctx->uid);
+    req.setGid(ctx->gid);
+    return reqproc->process(req);
 }
 
 static int erlent_symlink(const char *from, const char *to) {
     dbg() << "erlent_symlink '" << from << "' -> '" << to << "'." << endl;
     SymlinkRequest req(from, to);
+    struct fuse_context *ctx = fuse_get_context();
+    req.setUid(ctx->uid);
+    req.setGid(ctx->gid);
     return reqproc->process(req);
 }
 

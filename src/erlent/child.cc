@@ -119,6 +119,17 @@ static int childFunc(ChildParams params)
     }
 #endif
 
+    if (setreuid(params.initialUID, params.initialUID) == -1) {
+        int err = errno;
+        cerr << "setreuid failed: " << strerror(err) << endl;
+        exit(1);
+    }
+    if (setregid(params.initialUID, params.initialGID) == -1) {
+        int err = errno;
+        cerr << "setregid failed: " << strerror(err) << endl;
+        exit(1);
+    }
+
     execvp(args[0], args);
     int err = errno;
     cerr << "Could not execute '" << args[0] << "': " << strerror(err) << endl;
@@ -317,4 +328,13 @@ bool ChildParams::addMapping(const string &str, std::vector<Mapping> &mappings)
 
     mappings.push_back(Mapping(innerID, outerID, count));
     return true;
+}
+
+long ChildParams::lookupID(long inner, const std::vector<Mapping> &mapping)
+{
+    for (auto it=mapping.cbegin(); it!=mapping.cend(); ++it) {
+        if (it->innerID <= inner && inner < it->innerID+it->count)
+            return inner - it->innerID + it->outerID;
+    }
+    return 65534; // nouser / nogroup
 }

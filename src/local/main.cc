@@ -38,6 +38,9 @@ class LocalRequestProcessor : public RequestProcessor
         DIR = 1, FILE = 2
     };
 private:
+    uid_t outerU0;
+    gid_t outerG0;
+
     // We assume that 'pathname' does NOT end with '/'.
     // When "/" or a path without "/" is passed in, we return "/".
     string dirof(const string &pathname) {
@@ -90,8 +93,8 @@ private:
             struct stat buf;
             if (lstat(pathname.c_str(), &buf) == -1)
                 return -1;
-            a->uid  = buf.st_uid;
-            a->gid  = buf.st_gid;
+            a->uid  = outerU0;
+            a->gid  = outerG0;
             a->mode = buf.st_mode & ATTR_MASK;
             return 0;
         }
@@ -157,6 +160,11 @@ private:
     mode_t filemode = S_IRUSR | S_IWUSR;
     mode_t dirmode  = S_IRWXU;
 public:
+    void setupRoot(uid_t uid, gid_t gid) {
+        outerU0 = uid;
+        outerG0 = gid;
+    }
+
     int process(Request &req) override {
         makePathLocal(req);
         Reply &repl = req.getReply();
@@ -176,6 +184,8 @@ public:
             RmdirRequest *rmdirreq = dynamic_cast<RmdirRequest *>(&req);
             RenameRequest *renamereq = dynamic_cast<RenameRequest *>(&req);
             LinkRequest *linkreq = dynamic_cast<LinkRequest *>(&req);
+            SymlinkRequest *symlinkreq = dynamic_cast<SymlinkRequest *>(&req);
+            MknodRequest *mknodreq = dynamic_cast<MknodRequest *>(&req);
             if (chownreq != nullptr) {
                 emu_chown(repl, *pathname, chownreq->getUid(), chownreq->getGid());
             } else if (chmodreq != nullptr) {
@@ -200,6 +210,19 @@ public:
                     if (res == -1)
                         repl.setResult(-EIO);
                 }
+            } else if (symlinkreq != nullptr) {
+                symlinkreq->performLocally();
+                if (repl.getResult() == 0) {
+                    emu_creat_mkdir(repl, symlinkreq->getPathname2(), FILE,
+                                    S_IFLNK | S_IRWXU | S_IRWXG | S_IRWXO, symlinkreq->getUid(), symlinkreq->getGid());
+                }
+            } else if (mknodreq != nullptr) {
+                mode_t mode = mknodreq->getMode();
+                mknodreq->setMode((mode & ~ATTR_MASK) | filemode);
+                mknodreq->performLocally();
+                if (repl.getResult() == 0)
+                    emu_creat_mkdir(repl, mknodreq->getPathname(), FILE,
+                                    mode, mknodreq->getUid(), mknodreq->getGid());
             } else if (getattrreq != nullptr) {
                 GetattrReply &garepl = getattrreq->getReply();
                 getattrreq->performLocally();
@@ -258,15 +281,17 @@ static void usage(const char *progname)
          << endl
          << "Build time stamp: " << __DATE__ << " " << __TIME__ << endl
          << endl
-         << "   -r DIR       new root directory" << endl
-         << "   -w DIR       change working directory to DIR" << endl
-         << "   -C           use default -l/-L settings for chroots:" << endl
-         << "                   pass through /dev, /proc and /sys" << endl
-         << "   -u UID       change user ID to UID" << endl
-         << "   -g GID       change group ID to GID" << endl
-         << "   -d           Turn debug messagen on" << endl
-         << "   -h           print this help" << endl
-         << "   CMD ARGS...  command to execute and its arguments" << endl;
+         << "   -r DIR        new root directory" << endl
+         << "   -w DIR        change working directory to DIR after changing root" << endl
+         << "   -C            set up /dev, /proc and /sys inside the new root" << endl
+         << "   -m DIR:MNTPT  map DIR (from host) to MNTPT in new root" << endl
+         << "   -u UID        run CMD with this real and effective user  id" << endl
+         << "   -g GID        run CMD with this real and effective group id" << endl
+         << "   -U I:O:C      map user  ids [I..I+C) to host users  [O..O+C)" << endl
+         << "   -G I:O:C      map group ids [I..I+C) to host groups [O..O+C)" << endl
+         << "   -d            print a few debug messages" << endl
+         << "   -h            print this help" << endl
+         << "   CMD ARGS...   command to execute and its arguments" << endl;
 }
 
 int main(int argc, char *argv[])
@@ -295,8 +320,8 @@ int main(int argc, char *argv[])
                 return 1;
             }
             break;
-        case 'u': params.uidMappings.push_back(Mapping(atol(optarg), euid, 1)); break;
-        case 'g': params.gidMappings.push_back(Mapping(atol(optarg), egid, 1)); break;
+        case 'u': params.initialUID = atol(optarg); break;
+        case 'g': params.initialGID = atol(optarg); break;
         case 'U':
             if (!ChildParams::addMapping(optarg, params.uidMappings)) {
                 usage(argv[0]);
@@ -335,6 +360,7 @@ int main(int argc, char *argv[])
     args[n_args] = 0;
 
     reqproc.addPathMapping(true, "", chrootDir);
+    reqproc.setupRoot(params.lookupUID(0), params.lookupGID(0));
 
     return erlent_fuse(reqproc, args, params);
 }

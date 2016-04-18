@@ -30,9 +30,15 @@ public:
     std::vector<Mapping> uidMappings;
     std::vector<Mapping> gidMappings;
 
+    uid_t initialUID;
+    gid_t initialGID;
 public:
     static bool addBind(const std::string &str, std::vector<std::pair<std::string,std::string>> &binds);
     static bool addMapping(const std::string &str, std::vector<Mapping> &mappings);
+
+    static long lookupID(long inner, const std::vector<Mapping> &mapping);
+    long lookupUID(long inner) { return lookupID(inner, uidMappings); }
+    long lookupGID(long inner) { return lookupID(inner, gidMappings); }
 };
 
 pid_t setup_child(char *const *args, const ChildParams &params);
