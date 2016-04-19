@@ -269,6 +269,10 @@ static void *erlent_init(struct fuse_conn_info *conn)
     return 0;
 }
 
+// The user command sends SIGCHLD when it exits.
+// The receiver is the FUSE process (it has started
+// the user command as its child). Send SIGTERM to the
+// FUSE process to terminate the it.
 static void sigchld_action(int signum, siginfo_t *si, void *ctx)
 {
     int status;
@@ -342,6 +346,8 @@ int erlent_fuse(RequestProcessor &rp, char *const *cmdArgs_, const ChildParams &
     if (fuse_pid == -1)
         errExit("fork/fuse");
     else if (fuse_pid == 0) {
+        // the SIGCHLD signal handler needs to know the PID
+        fuse_pid = getpid();
         char *fuse_args[] = {
             strdup("erlent-fuse"), strdup("-f"), strdup("-s"),
             strdup("-o"), strdup("auto_unmount"),
@@ -354,6 +360,7 @@ int erlent_fuse(RequestProcessor &rp, char *const *cmdArgs_, const ChildParams &
         exit(fuse_main(fuse_argc, fuse_args, &erlent_oper, NULL));
     }
 
+    // wait for the FUSE process to end
     int fuse_status;
     waitpid(fuse_pid, &fuse_status, 0);
 
