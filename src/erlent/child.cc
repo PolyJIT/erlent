@@ -1,5 +1,6 @@
 extern "C" {
 #include <fcntl.h>
+#include <grp.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
@@ -132,6 +133,7 @@ static int childFunc(ChildParams params)
         cerr << "setregid failed: " << strerror(err) << endl;
         exit(1);
     }
+    setgroups(0, NULL);
 
     execvp(args[0], args);
     int err = errno;
