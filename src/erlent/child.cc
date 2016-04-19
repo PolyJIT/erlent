@@ -86,6 +86,7 @@ static int childFunc(ChildParams params)
     if (chroot(params.newRoot.c_str()) == -1) {
         int err = errno;
         cerr << "chroot failed: " << strerror(err) << endl;
+        exit(1);
     }
 
 #if 0
@@ -93,12 +94,14 @@ static int childFunc(ChildParams params)
     if (syscall(__NR_pivot_root, ".", "./mnt") == -1) {
         int err = errno;
         cerr << "pivot_root failed: " << strerror(err) << endl;
+        exit(1);
     }
     chdir("/");
 #endif
     if (chdir(params.newWorkDir.c_str()) == -1) {
         int err = errno;
         cerr << "chdir failed: " << strerror(err) << endl;
+        exit(1);
     }
 
 #if 0
