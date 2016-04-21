@@ -66,14 +66,16 @@ static int childFunc(ChildParams params)
 {
     wait_parent('I');
 
-    dbg() << "newwd = " << params.newRoot << endl;
-    dbg() << "newroot = " << params.newWorkDir << endl;
+    dbg() << "newroot = " << params.newRoot << endl;
+    dbg() << "newwd = " << params.newWorkDir << endl;
     dbg() << "command = ";
     for (char *const *p=args; *p; ++p) {
         dbg() << " " << *p;
     }
     dbg() << endl;
 
+    // make newRoot a mount point so we can use pivot_root later
+//    mnt(params.newRoot.c_str(), params.newRoot.c_str(), MS_BIND | MS_REC);
     if (params.devprocsys) {
         const string &root = params.newRoot;
         mnt("proc", (root+"/proc").c_str(), "proc", MS_NODEV | MS_NOSUID | MS_NOEXEC);
@@ -233,7 +235,7 @@ int uidmap_sub(pid_t child_pid, const ChildParams &params) {
 
 static int child_res;
 
-pid_t setup_child(char *const *cmdArgs,
+pid_t erlent::setup_child(char *const *cmdArgs,
                   const ChildParams &params)
 {
     pid_t child_pid = 0;
@@ -286,12 +288,12 @@ pid_t setup_child(char *const *cmdArgs,
     return child_pid;
 }
 
-void run_child() {
+void erlent::run_child() {
     signal_child('I');
 }
 
 // return exit status of pid p
-int wait_for_pid(pid_t p) {
+int erlent::wait_for_pid(pid_t p) {
     int status;
     while (waitpid(p, &status, 0) == -1) {
     }
@@ -335,11 +337,20 @@ bool ChildParams::addMapping(const string &str, std::vector<Mapping> &mappings)
     return true;
 }
 
-long ChildParams::lookupID(long inner, const std::vector<Mapping> &mapping)
+unsigned long ChildParams::lookupID(unsigned long inner, const std::vector<Mapping> &mapping)
 {
     for (auto it=mapping.cbegin(); it!=mapping.cend(); ++it) {
         if (it->innerID <= inner && inner < it->innerID+it->count)
             return inner - it->innerID + it->outerID;
     }
-    return 65534; // nouser / nogroup
+    return 65534; // nobody / nogroup
+}
+
+unsigned long ChildParams::inverseLookupID(unsigned long outer, const std::vector<Mapping> &mapping)
+{
+    for (auto it=mapping.cbegin(); it!=mapping.cend(); ++it) {
+        if (it->outerID <= outer && outer < it->outerID+it->count)
+            return outer - it->outerID + it->innerID;
+    }
+    return 65534; // nobody / nogroup
 }

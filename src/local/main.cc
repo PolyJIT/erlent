@@ -38,8 +38,7 @@ class LocalRequestProcessor : public RequestProcessor
         DIR = 1, FILE = 2
     };
 private:
-    uid_t outerU0;
-    gid_t outerG0;
+    const ChildParams *params;
 
     // We assume that 'pathname' does NOT end with '/'.
     // When "/" or a path without "/" is passed in, we return "/".
@@ -89,14 +88,17 @@ private:
     int readAttrs(const string &pathname, DIRFILE dt, Attrs *a) {
         // cerr << "readAttrs " << pathname << " " << (dt == DIR ? "DIR" : "FILE") << endl;
         int fd = openAttrsFile(pathname, dt, O_RDONLY);
-        if (fd == -1 && errno == ENOENT) {
-            struct stat buf;
-            if (lstat(pathname.c_str(), &buf) == -1)
+        if (fd == -1) {
+            if (errno == ENOENT) {
+                struct stat buf;
+                if (lstat(pathname.c_str(), &buf) == -1)
+                    return -1;
+                a->uid  = 0;
+                a->gid  = 0;
+                a->mode = buf.st_mode & ATTR_MASK;
+                return 0;
+            } else
                 return -1;
-            a->uid  = outerU0;
-            a->gid  = outerG0;
-            a->mode = buf.st_mode & ATTR_MASK;
-            return 0;
         }
         int s = read(fd, a, sizeof(*a));
         close(fd);
@@ -159,10 +161,15 @@ private:
     bool attr_emulation = true;
     mode_t filemode = S_IRUSR | S_IWUSR;
     mode_t dirmode  = S_IRWXU;
+
+    uid_t uid2outer(uid_t uid) const { return params->lookupUID(uid); }
+    gid_t gid2outer(gid_t gid) const { return params->lookupGID(gid); }
+    uid_t uid2inner(uid_t uid) const { return params->inverseLookupUID(uid); }
+    gid_t gid2inner(gid_t gid) const { return params->inverseLookupGID(gid); }
+
 public:
-    void setupRoot(uid_t uid, gid_t gid) {
-        outerU0 = uid;
-        outerG0 = gid;
+    void setParams(const ChildParams &params) {
+        this->params = &params;
     }
 
     int process(Request &req) override {
@@ -174,6 +181,11 @@ public:
             dbg() << "performing request on '" << pathname << "'" << endl;
         }
         if (attr_emulation) {
+            UidGid *ug = dynamic_cast<UidGid *>(&req);
+            if (ug != nullptr) {
+                ug->setUid(uid2outer(ug->getUid()));
+                ug->setGid(gid2outer(ug->getGid()));
+            }
             ChownRequest *chownreq = dynamic_cast<ChownRequest *>(&req);
             ChmodRequest *chmodreq = dynamic_cast<ChmodRequest *>(&req);
             GetattrRequest *getattrreq = dynamic_cast<GetattrRequest *>(&req);
@@ -231,10 +243,13 @@ public:
                     struct stat *buf = garepl.getStbuf();
                     DIRFILE dt = (buf->st_mode & S_IFDIR) ? DIR : FILE;
                     if (readAttrs(*pathname, dt, &a) == 0) {
-                        buf->st_uid = a.uid;
-                        buf->st_gid = a.gid;
+                        buf->st_uid = uid2inner(a.uid);
+                        buf->st_gid = gid2inner(a.gid);
                         buf->st_mode = (buf->st_mode & ~ATTR_MASK) | (a.mode & ATTR_MASK);
                     } else {
+                        // something went really wrong in readAttrs (because readAttrs returns default
+                        // values on ENOENT), set uid/gid to (outer) root (which will be mapped to
+                        // nobody/nogroup in the container)
                         buf->st_uid = 0;
                         buf->st_gid = 0;
                         buf->st_mode = buf->st_mode & ~(S_IRWXG | S_IRWXO);
@@ -301,13 +316,15 @@ int main(int argc, char *argv[])
     LocalRequestProcessor reqproc;
     int opt, usercmd;
 
-    uid_t euid = geteuid();
-    gid_t egid = getegid();
+    cerr << unitbuf;
+    cout << unitbuf;
 
-//    dbg() << unitbuf;
+    GlobalOptions::setDebug(false);
 
     char cwd[PATH_MAX];
     params.newWorkDir = getcwd(cwd, sizeof(cwd));
+    params.initialUID = 0;
+    params.initialGID = 0;
 
     while ((opt = getopt(argc, argv, "+r:w:Cm:u:g:U:G:dh")) != -1) {
         switch(opt) {
@@ -341,10 +358,14 @@ int main(int argc, char *argv[])
         }
     }
 
-    if (params.uidMappings.empty())
-        params.uidMappings.push_back(Mapping(euid, euid, 1));
-    if (params.gidMappings.empty())
-        params.gidMappings.push_back(Mapping(egid, egid, 1));
+    if (params.uidMappings.empty()) {
+        uid_t euid = geteuid();
+        params.uidMappings.push_back(Mapping(params.initialUID, euid, 1));
+    }
+    if (params.gidMappings.empty()) {
+        gid_t egid = getegid();
+        params.gidMappings.push_back(Mapping(params.initialGID, egid, 1));
+    }
 
     usercmd = optind;
     if (usercmd >= argc) {
@@ -360,7 +381,7 @@ int main(int argc, char *argv[])
     args[n_args] = 0;
 
     reqproc.addPathMapping(true, "", chrootDir);
-    reqproc.setupRoot(params.lookupUID(0), params.lookupGID(0));
+    reqproc.setParams(params);
 
     return erlent_fuse(reqproc, args, params);
 }

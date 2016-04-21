@@ -212,6 +212,35 @@ namespace erlent {
         }
     };
 
+    class UidGid {
+    private:
+        uid_t uid;
+        gid_t gid;
+    public:
+        void setUid(uid_t uid) { this->uid = uid; }
+        void setGid(gid_t gid) { this->gid = gid; }
+        uid_t getUid() const { return uid; }
+        gid_t getGid() const { return gid; }
+        void serialize(std::ostream &os) const {
+            writenum(os, uid);
+            writenum(os, gid);
+        }
+        void deserialize(std::istream &is) {
+            readnum(is, uid);
+            readnum(is, gid);
+        }
+    };
+
+    class Mode {
+    private:
+        mode_t mode;
+    public:
+        void setMode(mode_t mode) { this->mode = mode; }
+        mode_t getMode() const { return mode; }
+        void serialize(std::ostream &os) const { writenum(os, mode); }
+        void deserialize(std::istream &is) { readnum(is, mode); }
+    };
+
 
     class GetattrReply : public ReplyTempl<Message::GETATTR> {
         struct stat *stbuf;
@@ -349,19 +378,9 @@ namespace erlent {
     class CreatReply : public ReplyTempl<Message::CREAT> {
     };
 
-    class CreatRequest : public RequestWithPathnameTempl<CreatReply,Message::CREAT> {
-        mode_t mode;
-        uid_t  uid;
-        gid_t  gid;
+    class CreatRequest : public RequestWithPathnameTempl<CreatReply,Message::CREAT>, public UidGid, public Mode {
     public:
-        CreatRequest() { }
-        CreatRequest(const char *pathname, mode_t mode, uid_t uid, gid_t gid)
-            : RequestWithPathnameTempl(pathname), mode(mode), uid(uid), gid(gid) { }
-
-        void setMode(mode_t mode) { this->mode = mode; }
-        mode_t getMode() const { return mode; }
-        uid_t getUid() const { return uid; }
-        gid_t getGid() const { return gid; }
+        using RequestWithPathnameTempl::RequestWithPathnameTempl;
 
         void serialize(std::ostream &os) const;
         void deserialize(std::istream &is);
@@ -372,16 +391,15 @@ namespace erlent {
     class OpenReply : public ReplyTempl<Message::OPEN> {
     };
 
-    class OpenRequest : public RequestWithPathnameTempl<OpenReply,Message::OPEN> {
+    class OpenRequest : public RequestWithPathnameTempl<OpenReply,Message::OPEN>, public Mode {
         int flags;
         mode_t mode;
     public:
         OpenRequest() { }
-        OpenRequest(const char *pathname, int flags, mode_t mode)
-            : RequestWithPathnameTempl(pathname), flags(flags), mode(mode) { }
+        OpenRequest(const char *pathname, int flags)
+            : RequestWithPathnameTempl(pathname), flags(flags) { }
 
         int getFlags() const   { return flags; }
-        mode_t getMode() const { return mode; }
 
         void serialize(std::ostream &os) const;
         void deserialize(std::istream &is);
@@ -407,36 +425,6 @@ namespace erlent {
         void performLocally();
 
         mode_t getMode() const { return val; }
-    };
-
-
-    class UidGid {
-    private:
-        uid_t uid;
-        gid_t gid;
-    public:
-        void setUid(uid_t uid) { this->uid = uid; }
-        void setGid(gid_t gid) { this->gid = gid; }
-        uid_t getUid() const { return uid; }
-        gid_t getGid() const { return gid; }
-        void serialize(std::ostream &os) const {
-            writenum(os, uid);
-            writenum(os, gid);
-        }
-        void deserialize(std::istream &is) {
-            readnum(is, uid);
-            readnum(is, gid);
-        }
-    };
-
-    class Mode {
-    private:
-        mode_t mode;
-    public:
-        void setMode(mode_t mode) { this->mode = mode; }
-        mode_t getMode() const { return mode; }
-        void serialize(std::ostream &os) const { writenum(os, mode); }
-        void deserialize(std::istream &is) { readnum(is, mode); }
     };
 
     class MknodReply : public ReplyTempl<Message::MKNOD> {
@@ -510,31 +498,26 @@ namespace erlent {
     class MkdirReply : public ReplyTempl<Message::MKDIR> {
     };
 
-    class MkdirRequest : public RequestWithPathnameTempl<MkdirReply, Message::MKDIR> {
+    class MkdirRequest : public RequestWithPathnameTempl<MkdirReply, Message::MKDIR>, public UidGid {
         mode_t mode;
-        uid_t  uid;
-        gid_t  gid;
     public:
         MkdirRequest() { }
-        MkdirRequest(const char *pathname, mode_t mode, uid_t uid, gid_t gid)
-            : RequestWithPathnameTempl(pathname), mode(mode), uid(uid), gid(gid) { }
+        MkdirRequest(const char *pathname, mode_t mode)
+            : RequestWithPathnameTempl(pathname), mode(mode) { }
 
         void setMode(mode_t mode) { this->mode = mode; }
         mode_t getMode() const { return mode; }
-        uid_t getUid() const { return uid; }
-        gid_t getGid() const { return gid; }
 
         void serialize(std::ostream &os) const {
             this->RequestWithPathnameTempl::serialize(os);
+            this->UidGid::serialize(os);
             writenum(os, mode);
-            writenum(os, uid);
-            writenum(os, gid);
+
         }
         void deserialize(std::istream &is) {
             this->RequestWithPathnameTempl::deserialize(is);
+            this->UidGid::deserialize(is);
             readnum(is, mode);
-            readnum(is, uid);
-            readnum(is, gid);
         }
 
         void performLocally();

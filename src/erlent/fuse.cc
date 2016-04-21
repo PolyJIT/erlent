@@ -67,7 +67,8 @@ static int erlent_readlink(const char *path, char *result, size_t size) {
 static int erlent_open(const char *path, struct fuse_file_info *fi)
 {
     dbg() << "erlent_open for '" << path << "'." << endl;
-    OpenRequest req(path, fi->flags, 0);
+    OpenRequest req(path, fi->flags);
+    req.setMode(0);
     return reqproc->process(req);
 }
 
@@ -117,8 +118,10 @@ static int erlent_chown(const char *path, uid_t uid, gid_t gid) {
 
 static int erlent_mkdir(const char *path, mode_t mode) {
     dbg() << "erlent_mkdir '" << path << "'." << endl;
+    MkdirRequest req(path, mode);
     struct fuse_context *ctx = fuse_get_context();
-    MkdirRequest req(path, mode, ctx->uid, ctx->gid);
+    req.setUid(ctx->uid);
+    req.setGid(ctx->gid);
     return reqproc->process(req);
 }
 
@@ -149,8 +152,11 @@ static int erlent_utimens(const char *path, const struct timespec tv[2]) {
 static int erlent_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 {
     dbg() << "erlent_create '" << path << "'." << endl;
+    CreatRequest req(path);
+    req.setMode(mode);
     struct fuse_context *ctx = fuse_get_context();
-    CreatRequest req(path, mode, ctx->uid, ctx->gid);
+    req.setUid(ctx->uid);
+    req.setGid(ctx->gid);
     return reqproc->process(req);
 }
 
@@ -225,8 +231,7 @@ static void cleanup()
     cleanup_tempdir();
 }
 
-const char *tempdir;
-const char *newroot;
+static string newroot;
 
 static void cleanup_tempdir() {
     // Remove the temporary directory for the
@@ -238,9 +243,9 @@ static void cleanup_tempdir() {
     int res, err;
     int tries = 10;
     do {
-        res = rmdir(newroot);
-        err = errno;
+        res = rmdir(newroot.c_str());
         if (res == -1) {
+            err = errno;
             --tries;
             if (err == EBUSY && tries > 0) {
                 usleep(10000);
@@ -251,7 +256,7 @@ static void cleanup_tempdir() {
         } else
             tries = 0;
     } while (tries > 0);
-    rmdir(tempdir);
+    // rmdir(tempdir);
 }
 
 
@@ -293,19 +298,22 @@ int erlent_fuse(RequestProcessor &rp, char *const *cmdArgs_, const ChildParams &
     params = params_;
     reqproc = &rp;
 
-    char tempdirtempl[] = "/tmp/erlent.XXXXXX";
+    char tempdirtempl[] = "/tmp/erlent.root.XXXXXX";
 
     gethostname(hostname, sizeof(hostname));
 
-    tempdir = mkdtemp(tempdirtempl);
+    const char *tempdir = mkdtemp(tempdirtempl);
     if (tempdir == NULL)
         errExit("mkdtemp");
+    newroot = string(tempdir);
+    /*
     string newrootStr = string(tempdir) + "/newroot";
     newroot = newrootStr.c_str();
     if (mkdir(newroot, S_IRWXU) == -1) {
         rmdir(tempdir);
         errExit("mkdir newroot");
     }
+    */
     dbg() << "Running on " << hostname << ", new root: " << newroot << endl;
 
     struct sigaction sact;
@@ -354,7 +362,7 @@ int erlent_fuse(RequestProcessor &rp, char *const *cmdArgs_, const ChildParams &
             strdup("-o"), strdup("allow_other"),
             strdup("-o"), strdup("default_permissions"),
             //strdup("-d"),
-            strdup(newroot)
+            strdup(newroot.c_str())
         };
         int fuse_argc = sizeof(fuse_args)/sizeof(*fuse_args);
         exit(fuse_main(fuse_argc, fuse_args, &erlent_oper, NULL));

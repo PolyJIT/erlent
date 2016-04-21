@@ -13,6 +13,7 @@ add_library(erlent
   src/erlent/child.cc
   src/erlent/erlent.cc
   src/erlent/fuse.cc
+  src/erlent/local.cc
 )
 
 add_executable(erlent-server src/server/main.cc)
@@ -25,7 +26,7 @@ add_executable(erlent-local src/local/main.cc)
 target_link_libraries(erlent-local erlent fuse)
 
 add_executable(uchroot src/uchroot/main.cc)
-target_link_libraries(uchroot erlent)
+target_link_libraries(uchroot erlent fuse)
 
 add_executable(binddev src/binddev/main.cc)
 

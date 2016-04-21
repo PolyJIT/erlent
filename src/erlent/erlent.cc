@@ -386,16 +386,16 @@ void WriteRequest::performLocally()
 
 void OpenRequest::serialize(ostream &os) const
 {
-    this->Super::serialize(os);
+    this->RequestWithPathnameTempl::serialize(os);
+    this->Mode::serialize(os);
     writenum(os, flags);
-    writenum(os, mode);
 }
 
 void OpenRequest::deserialize(istream &is)
 {
-    this->Super::deserialize(is);
+    this->RequestWithPathnameTempl::deserialize(is);
+    this->Mode::deserialize(is);
     readnum(is, flags);
-    readnum(is, mode);
 }
 
 void OpenRequest::performLocally()
@@ -578,23 +578,21 @@ void ReadlinkRequest::performLocally()
 void CreatRequest::serialize(ostream &os) const
 {
     this->RequestWithPathname::serialize(os);
-    writenum(os, mode);
-    writenum(os, uid);
-    writenum(os, gid);
+    this->UidGid::serialize(os);
+    this->Mode::serialize(os);
 }
 
 void CreatRequest::deserialize(istream &is)
 {
     this->RequestWithPathname::deserialize(is);
-    readnum(is, mode);
-    readnum(is, uid);
-    readnum(is, gid);
+    this->UidGid::deserialize(is);
+    this->Mode::deserialize(is);
 }
 
 void CreatRequest::performLocally()
 {
     int res = 0;
-    int fd = creat(getPathname().c_str(), mode);
+    int fd = creat(getPathname().c_str(), getMode());
     if (fd == -1)
         res = -errno;
     else
