@@ -365,14 +365,20 @@ int erlent_fuse(RequestProcessor &rp, char *const *cmdArgs_, const ChildParams &
             strdup(newroot.c_str())
         };
         int fuse_argc = sizeof(fuse_args)/sizeof(*fuse_args);
-        exit(fuse_main(fuse_argc, fuse_args, &erlent_oper, NULL));
+
+        // The child signals its exit code to this process,
+        // so return child_res in case FUSE terminates correctly.
+        int fuse_err = fuse_main(fuse_argc, fuse_args, &erlent_oper, NULL);
+        exit(fuse_err != 0 ? fuse_err : child_res);
     }
 
     // wait for the FUSE process to end
-    int fuse_status;
-    waitpid(fuse_pid, &fuse_status, 0);
+    // "child_res" is not meaningful in this process because
+    // the process "fuse_pid" has the child process as its child
+    // (and gets its exit code).
+    int res = wait_for_pid(fuse_pid);
 
     cleanup();
 
-    return child_res;
+    return res;
 }
