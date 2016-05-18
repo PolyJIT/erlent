@@ -552,7 +552,7 @@ void AccessRequest::performLocally()
 
 void SymlinkRequest::performLocally()
 {
-    int res = symlink(getPathname().c_str(), getPathname2().c_str());
+    int res = symlink(getFrom().c_str(), getPathname().c_str());
     if (res < 0)
         res = -errno;
     getReply().setResult(res);

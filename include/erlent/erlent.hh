@@ -470,17 +470,28 @@ namespace erlent {
     class SymlinkReply : public ReplyTempl<Message::SYMLINK> {
     };
 
-    class SymlinkRequest : public RequestWithTwoPathnamesTempl<SymlinkReply,Message::SYMLINK>, public UidGid {
+    // SymlinkRequest is not a RequestWithTwoPathnames case because the
+    // source of the symlink must not be translated:
+    // "to" is the file that is actually created (i.e., this path is translated),
+    // "from" is the contents of this file (which is not translated).
+    class SymlinkRequest : public RequestWithPathnameTempl<SymlinkReply,Message::SYMLINK>, public UidGid {
+        std::string from;
     public:
-        using RequestWithTwoPathnamesTempl::RequestWithTwoPathnamesTempl;
+        SymlinkRequest() { }
+        SymlinkRequest(const char *from, const char *to)
+            : RequestWithPathnameTempl(to), from(from) { }
         void serialize(std::ostream &os) const {
-            this->RequestWithTwoPathnamesTempl::serialize(os);
+            this->RequestWithPathnameTempl::serialize(os);
             this->UidGid::serialize(os);
+            writestr(os, from);
         }
         void deserialize(std::istream &is) {
-            this->RequestWithTwoPathnamesTempl::deserialize(is);
+            this->RequestWithPathnameTempl::deserialize(is);
             this->UidGid::deserialize(is);
+            readstr(is, from);
         }
+
+        const std::string &getFrom() const { return from; }
 
         void performLocally();
     };

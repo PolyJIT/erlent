@@ -225,7 +225,7 @@ public:
             } else if (symlinkreq != nullptr) {
                 symlinkreq->performLocally();
                 if (repl.getResult() == 0) {
-                    emu_creat_mkdir(repl, symlinkreq->getPathname2(), FILE,
+                    emu_creat_mkdir(repl, symlinkreq->getPathname(), FILE,
                                     S_IFLNK | S_IRWXU | S_IRWXG | S_IRWXO, symlinkreq->getUid(), symlinkreq->getGid());
                 }
             } else if (mknodreq != nullptr) {
