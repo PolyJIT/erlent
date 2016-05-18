@@ -175,6 +175,16 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    if (chrootDir.substr(0,1) != "/") {
+        cerr << "New root directory must be an absolute path." << endl;
+        return 1;
+    }
+
+    if (params.newWorkDir.substr(0,1) != "/") {
+        cerr << "New working directory must be an absolute path." << endl;
+        return 1;
+    }
+
     int n_args = argc - usercmd;
     char **args = new char* [n_args+1];
     for (int i=0; i<n_args; ++i)
