@@ -178,10 +178,11 @@ private:
     mode_t filemode = S_IRUSR | S_IWUSR;
     mode_t dirmode  = S_IRWXU;
 
-    uid_t uid2outer(uid_t uid) const { return params->lookupUID(uid); }
-    gid_t gid2outer(gid_t gid) const { return params->lookupGID(gid); }
-    uid_t uid2inner(uid_t uid) const { return params->inverseLookupUID(uid); }
-    gid_t gid2inner(gid_t gid) const { return params->inverseLookupGID(gid); }
+    // uid/gid -1 is used with chown(2) to mean "no change"
+    uid_t uid2outer(uid_t uid) const { return uid == (uid_t)-1 ? uid : params->lookupUID(uid); }
+    gid_t gid2outer(gid_t gid) const { return gid == (gid_t)-1 ? gid : params->lookupGID(gid); }
+    uid_t uid2inner(uid_t uid) const { return uid == (uid_t)-1 ? uid : params->inverseLookupUID(uid); }
+    gid_t gid2inner(gid_t gid) const { return gid == (gid_t)-1 ? gid : params->inverseLookupGID(gid); }
 
 public:
     void setParams(const ChildParams &params) {
