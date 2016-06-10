@@ -74,12 +74,14 @@ int erlent::LocalRequestProcessor::process(Request &req) {
             if (garepl.getResult() == 0) {
                 Attrs a;
                 struct stat *buf = garepl.getStbuf();
-                DIRFILE dt = (buf->st_mode & S_IFDIR) ? DIR : FILE;
+                DIRFILE dt = S_ISDIR(buf->st_mode) ? DIR : FILE;
                 if (readAttrs(*pathname, dt, &a) == 0) {
                     buf->st_uid = uid2outer(a.uid);
                     buf->st_gid = gid2outer(a.gid);
                     buf->st_mode = (buf->st_mode & ~ATTR_MASK) | (a.mode & ATTR_MASK);
                 } else {
+//                    cerr << "ERROR: readAttrs failed for " << *pathname << " (assuming" << (dt == DIR ? "DIR" : "FILE")
+//                         << " from mode 0" << oct << buf->st_mode << endl;
                     // something went really wrong in readAttrs (because readAttrs returns default
                     // values on ENOENT), set uid/gid to (outer) root (which will be mapped to
                     // nobody/nogroup in the container)

@@ -73,7 +73,7 @@ private:
         if (lstat(pathname.c_str(), &buf) == -1) {
             cerr << "Expected directory or file \"" << pathname << "\" does not exist." << endl;
         }
-        DIRFILE dt = (buf.st_mode & S_IFDIR) ? DIR : FILE;
+        DIRFILE dt = S_ISDIR(buf.st_mode) ? DIR : FILE;
         return dt;
     }
 
