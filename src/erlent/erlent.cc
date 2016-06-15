@@ -471,64 +471,6 @@ void GlobalOptions::setDebug(bool dbg)
 }
 
 
-void RequestProcessor::addPathMapping(bool doLocally, const string &inside, const string &outside)
-{
-    auto less = [](const PathProp &left, const PathProp &right) {
-        return left.insidePath.length() > right.insidePath.length();
-    };
-    paths.insert(paths.begin(), PathProp(doLocally,inside,outside));
-    sort(paths.begin(), paths.end(), less);
-}
-
-static string pathConcat(const string &p1, const string &p2) {
-    if (p1[p1.length()-1] == '/' && p2.length() > 0 && p2[0] == '/')
-        return p1 + p2.substr(1);
-    return p1 + p2;
-}
-
-void RequestProcessor::makePathLocal(Request &req) const {
-    RequestWithPathname *rwp = dynamic_cast<RequestWithPathname *>(&req);
-    if (rwp == nullptr)
-        return;
-    const string &pathname = rwp->getPathname();
-    rwp->setPathname(makePathLocal(pathname));
-
-    RequestWithTwoPathnames *rw2p = dynamic_cast<RequestWithTwoPathnames *>(&req);
-    if (rw2p != nullptr) {
-        rw2p->setPathname2(makePathLocal(rw2p->getPathname2()));
-    }
-}
-
-string RequestProcessor::makePathLocal(const string &pathname) const
-{
-    // only translate absolute paths, i.e., path beginning with '/'.
-    if (pathname.find('/') != 0)
-        return pathname;
-    std::vector<PathProp>::const_iterator it, end = paths.end();
-    for (it=paths.begin(); it!=end; ++it) {
-        const PathProp &pp = *it;
-        if (pathname.find(pp.insidePath) == 0) {
-            return pathConcat(pp.outsidePath, pathname.substr(pp.insidePath.length()));
-        }
-    }
-    return pathname;
-}
-
-bool RequestProcessor::doLocally(const Request &req) const {
-    const RequestWithPathname *rwp = dynamic_cast<const RequestWithPathname *>(&req);
-    return rwp != nullptr && doLocally(rwp->getPathname());
-}
-
-bool RequestProcessor::doLocally(const std::string &pathname) const {
-    std::vector<PathProp>::const_iterator it, end = paths.end();
-    for (it=paths.begin(); it!=end; ++it) {
-        const PathProp &pp = *it;
-        if (pathname.find(pp.insidePath) == 0)
-            return pp.doLocally;
-    }
-    return false;
-}
-
 
 void AccessRequest::serialize(ostream &os) const
 {

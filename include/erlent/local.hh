@@ -22,6 +22,27 @@ using namespace std;
 class LocalRequestProcessor : public RequestProcessor
 {
 private:
+    struct PathProp {
+        bool doLocally;
+        std::string insidePath;
+        std::string outsidePath;
+
+        PathProp(bool doLocally, const std::string &inside, const std::string &outside)
+            : doLocally(doLocally), insidePath(inside), outsidePath(outside) { }
+    };
+
+    std::vector<PathProp> paths;
+
+public:
+    void addPathMapping(bool doLocally, const std::string &inside, const std::string &outside);
+
+private:
+    bool doLocally(const Request &req) const;
+    bool doLocally(const std::string &pathname) const;
+    void makePathLocal(Request &req) const;
+    std::string makePathLocal(const std::string &pathname) const;
+
+private:
     static const string emuPrefix;
     static const mode_t ATTR_MASK = S_ISUID | S_ISGID | S_ISVTX | S_IRWXU | S_IRWXG | S_IRWXO;
 

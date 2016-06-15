@@ -609,27 +609,8 @@ namespace erlent {
 
 
     class RequestProcessor {
-    private:
-        struct PathProp {
-            bool doLocally;
-            std::string insidePath;
-            std::string outsidePath;
-
-            PathProp(bool doLocally, const std::string &inside, const std::string &outside)
-                : doLocally(doLocally), insidePath(inside), outsidePath(outside) { }
-        };
-
-        std::vector<PathProp> paths;
-
     public:
         virtual int process(Request &req) = 0;
-
-        void addPathMapping(bool doLocally, const std::string &inside, const std::string &outside);
-
-        bool doLocally(const Request &req) const;
-        bool doLocally(const std::string &pathname) const;
-        void makePathLocal(Request &req) const;
-        std::string makePathLocal(const std::string &pathname) const;
     };
 }
 

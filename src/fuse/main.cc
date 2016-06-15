@@ -32,15 +32,16 @@ public:
         ostream &os = cout;
         istream &is = cin;
         Reply &repl = req.getReply();
-
+/*
         if (doLocally(req)) {
             makePathLocal(req);
             req.performLocally();
         } else {
+        */
             req.serialize(os);
             os.flush();
             repl.receive(is);
-        }
+//        }
 
         dbg() << "result is " << repl.getResultMessage() << endl;
         return repl.getResult();

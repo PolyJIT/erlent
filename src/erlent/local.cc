@@ -1,9 +1,87 @@
+#include <algorithm>
 #include <string>
 #include "erlent/local.hh"
 
 using namespace std;
 
 const string erlent::LocalRequestProcessor::emuPrefix = ".erlent";
+
+// remove all but one (if any) trailing slashes
+static string removeTrailingSlashes(string path) {
+    bool endsWithSlash = *path.rbegin() == '/';
+    while (*path.rbegin() == '/')
+        path = path.substr(0, path.length()-1);
+    return endsWithSlash ? path+"/" : path;
+}
+
+void erlent::LocalRequestProcessor::addPathMapping(bool doLocally, const string &inside, const string &outside)
+{
+    auto less = [](const PathProp &left, const PathProp &right) {
+        return left.insidePath.length() > right.insidePath.length();
+    };
+    PathProp pp(doLocally, removeTrailingSlashes(inside), removeTrailingSlashes(outside));
+    paths.insert(paths.begin(), pp);
+    std::sort(paths.begin(), paths.end(), less);
+}
+
+static string pathConcat(const string &p1, const string &p2) {
+    if (p1[p1.length()-1] == '/') {
+        if (p2.length() > 0 && p2[0] == '/')
+            return p1 + p2.substr(1);
+        else
+            return p1 + p2;
+    } else if (p2.length() > 0 && p2[0] == '/')
+        return p1 + p2;
+    return p1 + "/" + p2;
+}
+
+void erlent::LocalRequestProcessor::makePathLocal(Request &req) const {
+    RequestWithPathname *rwp = dynamic_cast<RequestWithPathname *>(&req);
+    if (rwp == nullptr)
+        return;
+    const string &pathname = rwp->getPathname();
+    rwp->setPathname(makePathLocal(pathname));
+    RequestWithTwoPathnames *rw2p = dynamic_cast<RequestWithTwoPathnames *>(&req);
+    if (rw2p != nullptr) {
+        rw2p->setPathname2(makePathLocal(rw2p->getPathname2()));
+    }
+}
+
+static bool isPathPrefixOf(const string &prefix, const string &path) {
+    if (*prefix.rbegin() == '/')
+        return path.find(prefix) == 0;
+    return path == prefix || path.find(prefix + "/") == 0;
+}
+
+string erlent::LocalRequestProcessor::makePathLocal(const string &pathname) const
+{
+    // only translate absolute paths, i.e., path beginning with '/'.
+    if (pathname.find('/') != 0)
+        return pathname;
+    std::vector<PathProp>::const_iterator it, end = paths.end();
+    for (it=paths.begin(); it!=end; ++it) {
+        const PathProp &pp = *it;
+        if (isPathPrefixOf(pp.insidePath, pathname)) {
+            return pathConcat(pp.outsidePath, pathname.substr(pp.insidePath.length()));
+        }
+    }
+    return pathname;
+}
+
+bool erlent::LocalRequestProcessor::doLocally(const Request &req) const {
+    const RequestWithPathname *rwp = dynamic_cast<const RequestWithPathname *>(&req);
+    return rwp != nullptr && doLocally(rwp->getPathname());
+}
+
+bool erlent::LocalRequestProcessor::doLocally(const std::string &pathname) const {
+    std::vector<PathProp>::const_iterator it, end = paths.end();
+    for (it=paths.begin(); it!=end; ++it) {
+        const PathProp &pp = *it;
+        if (pathname.find(pp.insidePath) == 0)
+            return pp.doLocally;
+    }
+    return false;
+}
 
 int erlent::LocalRequestProcessor::process(Request &req) {
     makePathLocal(req);
