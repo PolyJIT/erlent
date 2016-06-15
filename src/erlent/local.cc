@@ -10,8 +10,14 @@ int erlent::LocalRequestProcessor::process(Request &req) {
     Reply &repl = req.getReply();
     RequestWithPathname *rwp = dynamic_cast<RequestWithPathname *>(&req);
     const string *pathname = rwp != nullptr ? &rwp->getPathname() : nullptr;
+    RequestWithTwoPathnames *rw2p = dynamic_cast<RequestWithTwoPathnames *>(&req);
+    const string *pathname2 = rw2p != nullptr ? &rw2p->getPathname2() : nullptr;
     if (pathname != nullptr) {
-        dbg() << "performing request on '" << pathname << "'" << endl;
+        if (isEmuFile(*pathname))
+            return -EPERM;
+        if (pathname2 != nullptr && isEmuFile(*pathname2))
+            return -EPERM;
+        dbg() << "performing request on '" << *pathname << "'" << endl;
     }
     if (attr_emulation) {
         UidGid *ug = dynamic_cast<UidGid *>(&req);

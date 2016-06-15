@@ -170,8 +170,9 @@ private:
     }
 
     static bool isEmuFile(const string &name) {
-        string::size_type l = name.length();
-        return name.find(emuPrefix) == 0;
+        size_t lastslash = name.rfind('/');
+        string basename = lastslash == string::npos ? name : name.substr(lastslash+1);
+        return basename.find(emuPrefix) == 0;
     }
 
     bool attr_emulation = true;
