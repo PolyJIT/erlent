@@ -184,7 +184,7 @@ int erlent::LocalRequestProcessor::process(Request &req) {
                 unlink(attrsFileName(unlinkreq->getPathname(), FILE).c_str());
         } else if (rmdirreq != nullptr) {
             // the directory can only be removed when it is empty, so delete
-            // the attributes file first but same its contents in case
+            // the attributes file first but save its contents in case
             // the rmdir fails.
             Attrs a;
             readAttrs(rmdirreq->getPathname(), DIR, &a);
