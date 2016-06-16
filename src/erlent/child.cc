@@ -152,25 +152,40 @@ static int childFunc(ChildParams params)
         int amaster;
         char slave[200];
         pid_t p;
-        p = forkpty(&amaster, slave, NULL, NULL);
+        struct winsize ws;
+        struct termios oldsettings;
+        if (tcgetattr(0, &oldsettings) == -1) {
+            int err = errno;
+            cerr << "tcgetattr failed: " << strerror(err) << endl;
+            exit(127);
+        }
+        if (ioctl(STDIN_FILENO, TIOCGWINSZ, (char *) &ws) < 0) {
+            cerr << "TIOCGWINSZ error" << endl;
+            exit(127);
+        }
+
+        p = forkpty(&amaster, slave, &oldsettings, &ws);
         if (p == -1) {
             int err = errno;
             cerr << "forkpty failed: " << strerror(err) << endl;
-            return 127;
+            exit(127);
         } else if (p == 0) {
-            struct termios settings;
-            tcgetattr(0, &settings);
-
-            // Set RAW mode on slave side of PTY
-            cfmakeraw(&settings);
-            tcsetattr(0, TCSANOW, &settings);
-
             execvp(args[0], args);
             int err = errno;
             cerr << "Could not execute '" << args[0] << "': " << strerror(err) << endl;
-            return 127;
+            exit(127);
         } else {
-            cerr << "slave device: " << slave << endl;
+            // cerr << "slave device: " << slave << endl;
+
+            struct termios settings;
+            // Set RAW mode on slave side of PTY
+            settings = oldsettings;
+            cfmakeraw(&settings);
+            if (tcsetattr(0, TCSANOW, &settings) < 0) {
+                int err = errno;
+                cerr << "tcsetattr failed: " << strerror(err) << endl;
+                exit(127);
+            }
 
             bool quit = false;
             while (!quit) {
@@ -189,25 +204,29 @@ static int childFunc(ChildParams params)
                 if (rc == -1) {
                     int err = errno;
                     cerr << "select failed: " << strerror(err) << endl;
-                    exit(1);
+                    tcsetattr(0, TCSANOW, &oldsettings);
+                    exit(127);
                 }
 
                 if (FD_ISSET(0, &fd_in)) {
                     rc = read(0, input, sizeof(input));
-                    if (rc > 0)
-                        write(amaster, input, rc);
-                    else if (rc < 0)
+                    if (rc > 0) {
+                        if (write(amaster, input, rc) == -1)
+                            quit = true;
+                    } else if (rc <= 0)
                         quit = true;
                 }
 
                 if (FD_ISSET(amaster, &fd_in)) {
                     rc = read(amaster, input, sizeof(input));
-                    if (rc > 0)
-                        write(1, input, rc);
-                    else if (rc < 0)
+                    if (rc > 0) {
+                        if (write(1, input, rc) == -1)
+                            quit = true;
+                    } else if (rc <= 0)
                         quit = true;
                 }
             }
+            tcsetattr(0, TCSANOW, &oldsettings);
             int res = wait_for_pid(p);
             exit(res);
         }
