@@ -62,6 +62,18 @@ static void mnt(const char *src, const char *dst, const char *fstype, int flags=
     }
 }
 
+// Handler for PTY resize (SIGWINCH).
+int amaster;  // master device of child's PTY
+static void sigwinch_action(int sig, siginfo_t *, void *) {
+    struct winsize ws;
+    if (ioctl(STDIN_FILENO, TIOCGWINSZ, (char *) &ws) < 0) {
+        cerr << "TIOCGWINSZ error" << endl;
+    }
+    if (ioctl(amaster, TIOCSWINSZ, (char *) &ws) < 0) {
+        cerr << "TIOCSWINSZ error" << endl;
+    }
+}
+
 static char *const *args;
 extern int pivot_root(const char * new_root,const char * put_old);
 static int childFunc(ChildParams params)
@@ -149,7 +161,6 @@ static int childFunc(ChildParams params)
     setgroups(0, NULL);
 
     if (isatty(0)) {
-        int amaster;
         char slave[200];
         pid_t p;
         struct winsize ws;
@@ -182,6 +193,13 @@ static int childFunc(ChildParams params)
             exit(127);
         } else {
             // cerr << "slave device: " << slave << endl;
+
+            // Install handler for terminal resizes.
+            struct sigaction sact;
+            memset(&sact, 0, sizeof(sact));
+            sact.sa_sigaction = sigwinch_action;
+            sact.sa_flags = SA_SIGINFO;
+            sigaction(SIGWINCH, &sact, NULL);
 
             struct termios settings;
             // Set RAW mode on slave side of PTY
