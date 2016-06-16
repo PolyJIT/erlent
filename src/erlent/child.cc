@@ -1,6 +1,7 @@
 extern "C" {
 #include <fcntl.h>
 #include <grp.h>
+#include <pty.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
@@ -50,8 +51,9 @@ static void wait_parent(char expected) {
 }
 
 
-void mnt(const char *src, const char *dst, const char *fstype, int flags) {
-    int res = mount(src, dst, fstype, flags, NULL);
+static void mnt(const char *src, const char *dst, const char *fstype, int flags=0,
+         const char *options=NULL) {
+    int res = mount(src, dst, fstype, flags, options);
     if (res == -1) {
         int err = errno;
         cerr << "Mount of '" << src << "' at '" << dst << "' (type " << fstype
@@ -78,7 +80,6 @@ static int childFunc(ChildParams params)
 //    mnt(params.newRoot.c_str(), params.newRoot.c_str(), MS_BIND | MS_REC);
     if (params.devprocsys) {
         const string &root = params.newRoot;
-        mnt("proc", (root+"/proc").c_str(), "proc", MS_NODEV | MS_NOSUID | MS_NOEXEC);
         mnt("/dev", (root+"/dev").c_str(), NULL, MS_BIND | MS_REC);
         mnt("/sys", (root+"/sys").c_str(), NULL, MS_BIND | MS_REC);
     }
@@ -92,6 +93,16 @@ static int childFunc(ChildParams params)
         exit(1);
     }
 
+    if (params.devprocsys) {
+        mnt("proc", "/proc", "proc");
+        mnt("erlentpts", "/dev/pts", "devpts", MS_NOSUID | MS_NOEXEC, "newinstance,gid=5");
+        mnt("/dev/pts/ptmx", "/dev/ptmx", NULL, MS_BIND);
+        if (chmod("/dev/pts/ptmx", 0666) == -1) {
+            int err = errno;
+            cerr << "chmod on /dev/pts/ptmx failed: " << strerror(err) << endl;
+            exit(1);
+        }
+    }
 #if 0
     chdir(params.newRoot.c_str());
     if (syscall(__NR_pivot_root, ".", "./mnt") == -1) {
@@ -137,10 +148,75 @@ static int childFunc(ChildParams params)
     }
     setgroups(0, NULL);
 
-    execvp(args[0], args);
-    int err = errno;
-    cerr << "Could not execute '" << args[0] << "': " << strerror(err) << endl;
-    return 127;
+    if (isatty(0)) {
+        int amaster;
+        char slave[200];
+        pid_t p;
+        p = forkpty(&amaster, slave, NULL, NULL);
+        if (p == -1) {
+            int err = errno;
+            cerr << "forkpty failed: " << strerror(err) << endl;
+            return 127;
+        } else if (p == 0) {
+            struct termios settings;
+            tcgetattr(0, &settings);
+
+            // Set RAW mode on slave side of PTY
+            cfmakeraw(&settings);
+            tcsetattr(0, TCSANOW, &settings);
+
+            execvp(args[0], args);
+            int err = errno;
+            cerr << "Could not execute '" << args[0] << "': " << strerror(err) << endl;
+            return 127;
+        } else {
+            cerr << "slave device: " << slave << endl;
+
+            bool quit = false;
+            while (!quit) {
+                char input[256];
+                fd_set fd_in;
+
+                FD_ZERO(&fd_in);
+                FD_SET(0, &fd_in);
+                FD_SET(amaster, &fd_in);
+
+                int rc;
+                do {
+                    rc = select(amaster + 1, &fd_in, NULL, NULL, NULL);
+                } while (rc == -1 && errno == EINTR);
+
+                if (rc == -1) {
+                    int err = errno;
+                    cerr << "select failed: " << strerror(err) << endl;
+                    exit(1);
+                }
+
+                if (FD_ISSET(0, &fd_in)) {
+                    rc = read(0, input, sizeof(input));
+                    if (rc > 0)
+                        write(amaster, input, rc);
+                    else if (rc < 0)
+                        quit = true;
+                }
+
+                if (FD_ISSET(amaster, &fd_in)) {
+                    rc = read(amaster, input, sizeof(input));
+                    if (rc > 0)
+                        write(1, input, rc);
+                    else if (rc < 0)
+                        quit = true;
+                }
+            }
+            int res = wait_for_pid(p);
+            exit(res);
+        }
+    } else { // stdin is not a terminal
+        execvp(args[0], args);
+        int err = errno;
+        cerr << "Could not execute '" << args[0] << "': " << strerror(err) << endl;
+        return 127;
+    }
 }
 
 static void initComm() {

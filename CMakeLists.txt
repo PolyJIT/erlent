@@ -17,13 +17,13 @@ add_library(erlent
 )
 
 add_executable(erlent-server src/server/main.cc)
-target_link_libraries(erlent-server erlent)
+target_link_libraries(erlent-server erlent util)
 
 add_executable(erlent-fuse src/fuse/main.cc)
-target_link_libraries(erlent-fuse erlent fuse)
+target_link_libraries(erlent-fuse erlent fuse util)
 
 add_executable(uchroot src/uchroot/main.cc)
-target_link_libraries(uchroot erlent fuse)
+target_link_libraries(uchroot erlent fuse util)
 
 add_executable(binddev src/binddev/main.cc)
 
