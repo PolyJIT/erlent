@@ -164,6 +164,12 @@ static int childFunc(ChildParams params)
             exit(127);
         }
 
+        // Make sure the signal handler for
+        // SIGCHLD is _not_ SIG_IGN because in this case
+        // waitpid can fail with ECHLD (there is no child
+        // any more to wait for).
+        signal(SIGCHLD, SIG_DFL);
+
         p = forkpty(&amaster, slave, &oldsettings, &ws);
         if (p == -1) {
             int err = errno;
