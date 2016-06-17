@@ -107,13 +107,8 @@ static int childFunc(ChildParams params)
 
     if (params.devprocsys) {
         mnt("proc", "/proc", "proc");
-        mnt("erlentpts", "/dev/pts", "devpts", MS_NOSUID | MS_NOEXEC, "newinstance,gid=5");
+        mnt("erlentpts", "/dev/pts", "devpts", MS_NOSUID | MS_NOEXEC, "newinstance,ptmxmode=0666,gid=5");
         mnt("/dev/pts/ptmx", "/dev/ptmx", NULL, MS_BIND);
-        if (chmod("/dev/pts/ptmx", 0666) == -1) {
-            int err = errno;
-            cerr << "chmod on /dev/pts/ptmx failed: " << strerror(err) << endl;
-            exit(1);
-        }
     }
 #if 0
     chdir(params.newRoot.c_str());
