@@ -21,26 +21,29 @@ using namespace std;
 
 class LocalRequestProcessor : public RequestProcessor
 {
+public:
+    enum struct AttrType { Untranslated, Emulated, Mapped };
 private:
     struct PathProp {
-        bool doLocally;
+        AttrType attrType;
         std::string insidePath;
         std::string outsidePath;
 
-        PathProp(bool doLocally, const std::string &inside, const std::string &outside)
-            : doLocally(doLocally), insidePath(inside), outsidePath(outside) { }
+        PathProp(AttrType attrType, const std::string &inside, const std::string &outside)
+            : attrType(attrType), insidePath(inside), outsidePath(outside) { }
     };
 
     std::vector<PathProp> paths;
 
 public:
-    void addPathMapping(bool doLocally, const std::string &inside, const std::string &outside);
+    void addPathMapping(AttrType attrType, const std::string &inside, const std::string &outside);
+    AttrType getAttrType(const Request &req) const;
+    AttrType getAttrType(const std::string &pathname) const;
 
 private:
-    bool doLocally(const Request &req) const;
-    bool doLocally(const std::string &pathname) const;
-    void makePathLocal(Request &req) const;
-    std::string makePathLocal(const std::string &pathname) const;
+    const PathProp *findPathProp(const std::string &pathname) const;
+    void translatePath(Request &req) const;
+    std::string translatePath(const std::string &pathname) const;
 
 private:
     static const string emuPrefix;
@@ -196,7 +199,6 @@ private:
         return basename.find(emuPrefix) == 0;
     }
 
-    bool attr_emulation = true;
     mode_t filemode = S_IRUSR | S_IWUSR;
     mode_t dirmode  = S_IRWXU;
 

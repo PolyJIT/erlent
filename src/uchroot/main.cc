@@ -84,6 +84,15 @@ static void automaticMappings(ChildParams &params) {
 
 }
 
+bool parseBind(const string &str, string &first, string &second) {
+    size_t pos = str.find(':');
+    if (pos == 0 || pos == string::npos)
+        return false;
+    first  = str.substr(0, pos);
+    second = str.substr(pos+1);
+    return true;
+}
+
 static void usage(const char *progname)
 {
     cerr << "USAGE: " << progname << " <OPTIONS> [--] CMD ARGS..." << endl
@@ -94,7 +103,8 @@ static void usage(const char *progname)
          << "   -r DIR        new root directory" << endl
          << "   -w DIR        change working directory to DIR after changing root" << endl
          << "   -C            set up /dev, /proc and /sys inside the new root" << endl
-         << "   -m DIR:MNTPT  map DIR (from host) to MNTPT in new root" << endl
+         << "   -M DIR:MNTPT  map DIR (from host) to MNTPT in new root with uid/gid mapping" << endl
+         << "   -m DIR:MNTPT  bind mount DIR (from host) to MNTPT in new root" << endl
          << "   -E            emulate file owner and access mode through FUSE" << endl
          << "   -u UID        run CMD with this real and effective user  id (default: 0)" << endl
          << "   -g GID        run CMD with this real and effective group id (default: 0)" << endl
@@ -125,11 +135,20 @@ int main(int argc, char *argv[])
     params.initialUID = 0;
     params.initialGID = 0;
 
-    while ((opt = getopt(argc, argv, "+r:w:CEm:u:g:U:G:Adh")) != -1) {
+    while ((opt = getopt(argc, argv, "+r:w:CEM:m:u:g:U:G:Adh")) != -1) {
         switch(opt) {
         case 'r': chrootDir = optarg; break;
         case 'w': params.newWorkDir = optarg; break;
         case 'C': params.devprocsys = true; break;
+        case 'M': {
+            string outside, inside;
+            if (!parseBind(optarg, outside, inside)) {
+                usage(argv[0]);
+                return 1;
+            }
+            reqproc.addPathMapping(LocalRequestProcessor::AttrType::Mapped, inside, outside);
+            break;
+        }
         case 'm':
             if (!ChildParams::addBind(optarg, params.bindMounts)) {
                 usage(argv[0]);
@@ -194,7 +213,7 @@ int main(int argc, char *argv[])
     int exitcode;
     if (withfuse) {
         // params.newRoot is set by erlent_fuse
-        reqproc.addPathMapping(true, "", chrootDir);
+        reqproc.addPathMapping(LocalRequestProcessor::AttrType::Emulated, "/", chrootDir);
         reqproc.setParams(params);
         exitcode = erlent_fuse(reqproc, args, params);
     } else {
