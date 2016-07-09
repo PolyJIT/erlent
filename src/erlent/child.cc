@@ -28,24 +28,35 @@ static void signal_parent(char c) {
         perror("signal_parent");
 }
 
-static void wait_child(char expected) {
-    char c = 0;
-    if (read(toparent[0], &c, 1) == -1)
+static int wait_child(char expected) {
+    char c;
+    ssize_t res;
+    res = read(toparent[0], &c, 1);
+    if (res == -1)
         perror("wait_child");
-    if (c != expected) {
+    else if (res == 0) {
+        cerr << "Communication error in wait_child: child gone" << endl;
+        return -1;
+    } else if (c != expected) {
         cerr << "Communication error in wait_child: expected '" << expected
              << "', got '" << c << "'." << endl;
-        exit(1);
+        return -1;
     }
+    return 0;
 }
 
 static void wait_parent(char expected) {
-    char c = 0;
-    if (read(tochild[0], &c, 1) == -1)
+    char c;
+    ssize_t res;
+    res = read(tochild[0], &c, 1);
+    if (res == -1)
         perror("wait_parent");
-    if (c != expected) {
+    else if (res == 0) {
+        // Parent closed the communication channel, so exit gracefully.
+        exit(0);
+    } else if (c != expected) {
         cerr << "Communication error in wait_parent: expected '" << expected
-             << "', got '" << c << "'." << endl;
+             << "', got '" << c << "'."  << endl;
         exit(1);
     }
 }
@@ -380,23 +391,27 @@ pid_t erlent::setup_child(char *const *cmdArgs,
     }
     close(toparent[1]);
     close(tochild[0]);
-    wait_child('U');
 
-    uid_t euid = geteuid();
-    gid_t egid = getegid();
     int err = 0;
-    if (params.uidMappings.size() == 1 && params.uidMappings[0].count == 1 &&
-            params.gidMappings.size() == 1 && params.gidMappings[0].count == 1 &&
-            params.uidMappings[0].outerID == euid && params.gidMappings[0].outerID == egid) {
-        err = uidmap_single(child_pid, params.uidMappings[0].innerID,
-                params.gidMappings[0].innerID);
-    } else {
-        err = uidmap_sub(child_pid, params);
+
+    err = wait_child('U');
+    if (err == 0) {
+        uid_t euid = geteuid();
+        gid_t egid = getegid();
+        if (params.uidMappings.size() == 1 && params.uidMappings[0].count == 1 &&
+                params.gidMappings.size() == 1 && params.gidMappings[0].count == 1 &&
+                params.uidMappings[0].outerID == euid && params.gidMappings[0].outerID == egid) {
+            err = uidmap_single(child_pid, params.uidMappings[0].innerID,
+                    params.gidMappings[0].innerID);
+        } else {
+            err = uidmap_sub(child_pid, params);
+        }
     }
 
     if (err != 0) {
-        kill(child_pid, SIGTERM);
-        return -1;
+        // There was an error setting up the child environment,
+        // kill the child process.
+        kill(child_pid, SIGKILL);
     }
 
     return child_pid;

@@ -268,9 +268,8 @@ static char *const *cmdArgs;
 static void *erlent_init(struct fuse_conn_info *conn)
 {
     child_pid = setup_child(cmdArgs, params);
-    if (child_pid == -1)
-        errExit("fork");
-    run_child();
+    if (child_pid != -1)
+        run_child();
     return 0;
 }
 
