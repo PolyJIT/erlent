@@ -328,32 +328,47 @@ int uidmap_single(pid_t child_pid, uid_t new_uid, gid_t new_gid) {
 }
 
 int do_idmap(const char *cmd, pid_t child_pid, const std::vector<Mapping> &mappings) {
-    ostringstream oss;
-    oss << cmd << " " << dec << child_pid;
+    size_t n_mappings = mappings.size();
+    char **argv = new char* [3*n_mappings+3];
+    int argc = 0;
+    argv[argc++] = strdup(cmd);
+    argv[argc++] = strdup(to_string(child_pid).c_str());
     for (const Mapping &m : mappings) {
-        oss << " " << dec << m.innerID << " " << m.outerID << " " << m.count;
+        argv[argc++] = strdup(to_string(m.innerID).c_str());
+        argv[argc++] = strdup(to_string(m.outerID).c_str());
+        argv[argc++] = strdup(to_string(m.count).c_str());
     }
-    int res = system(oss.str().c_str());
-    if (res == -1) {
-        cerr << oss.str() << ": cannot invoke (error -1) ?!" << endl;
-        return -1;
-    } else if (WIFEXITED(res)) {
-        if (WEXITSTATUS(res) != 0) {
-            cerr << oss.str() << " failed: exit status " << WEXITSTATUS(res) << endl;
-            return -1;
-        }
-    } else {
-        cerr << oss.str() << " failed, no exit status." << endl;
-        return -1;
+    argv[argc] = NULL;
+    int res = -1;
+    int pid = fork();
+    if (pid == 0) {
+        execv(argv[0], argv);
+        exit(127);
+    } else if (pid > 0) {
+        res = wait_for_pid(pid);
+    } else if (pid < 0) {
+        cerr << "fork failed" << endl;
+        res = 127;
     }
 
-    return 0;
+    if (res != 0) {
+        for (int i=0; i<argc; ++i)
+            cerr << "" "" << argv[i];
+        cerr << ": cannot invoke, exit code " << res << endl;
+        res = -1;
+    }
+
+    for (int i=0; i<argc; ++i)
+        free(argv[i]);
+    delete[] argv;
+
+    return res;
 }
 
 int uidmap_sub(pid_t child_pid, const ChildParams &params) {
-    if (do_idmap("newuidmap", child_pid, params.uidMappings) != 0)
+    if (do_idmap("/usr/bin/newuidmap", child_pid, params.uidMappings) != 0)
         return -1;
-    if (do_idmap("newgidmap", child_pid, params.gidMappings) != 0)
+    if (do_idmap("/usr/bin/newgidmap", child_pid, params.gidMappings) != 0)
         return -1;
     return 0;
 }
