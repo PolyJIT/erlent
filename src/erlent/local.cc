@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <mutex>
 #include <string>
 #include "erlent/local.hh"
 
@@ -88,7 +89,33 @@ string erlent::LocalRequestProcessor::translatePath(const string &pathname) cons
     return pathConcat(pp->outsidePath, pathname.substr(pp->insidePath.length()));
 }
 
+static bool needsLock(const erlent::Request &req) {
+    using namespace erlent;
+    switch(req.getMessageType()) {
+    case Message::OPEN:
+    case Message::READ:
+    case Message::READDIR:
+    case Message::READLINK:
+    case Message::STATFS:
+    case Message::TRUNCATE:
+    case Message::WRITE: return false;
+    default: return true;
+    }
+}
+
 int erlent::LocalRequestProcessor::process(Request &req) {
+    static std::mutex m;
+
+    bool nL = needsLock(req);
+    if (nL)
+        m.lock();
+    int res = do_process(req);
+    if (nL)
+        m.unlock();
+    return res;
+}
+
+int erlent::LocalRequestProcessor::do_process(Request &req) {
     AttrType attrType = getAttrType(req);
 
     translatePath(req);

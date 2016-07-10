@@ -208,6 +208,7 @@ private:
     uid_t uid2inner(uid_t uid) const { return uid == (uid_t)-1 ? uid : params->inverseLookupUID(uid); }
     gid_t gid2inner(gid_t gid) const { return gid == (gid_t)-1 ? gid : params->inverseLookupGID(gid); }
 
+    int do_process(Request &req);
 public:
     void setParams(const ChildParams &params) {
         this->params = &params;

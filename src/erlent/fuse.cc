@@ -356,7 +356,7 @@ int erlent_fuse(RequestProcessor &rp, char *const *cmdArgs_, const ChildParams &
         // the SIGCHLD signal handler needs to know the PID
         fuse_pid = getpid();
         char *fuse_args[] = {
-            strdup("erlent-fuse"), strdup("-f"), strdup("-s"),
+            strdup("erlent-fuse"), strdup("-f"), //strdup("-s"),
             strdup("-o"), strdup("auto_unmount"),
             strdup("-o"), strdup("allow_other"),
             strdup("-o"), strdup("default_permissions"),
