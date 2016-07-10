@@ -50,7 +50,7 @@ private:
     static const mode_t ATTR_MASK = S_ISUID | S_ISGID | S_ISVTX | S_IRWXU | S_IRWXG | S_IRWXO;
 
     enum DIRFILE {
-        DIR = 1, FILE = 2
+        DIRECTORY = 1, FILE = 2
     };
 
     const erlent::ChildParams *params;
@@ -86,7 +86,7 @@ private:
     }
 
     string attrsFileName(const string &pathname, DIRFILE dt) {
-        string attrsFN = dt == DIR ? pathname + "/" + emuPrefix:
+        string attrsFN = dt == DIRECTORY ? pathname + "/" + emuPrefix:
                                      dirof(pathname) + "/" + emuPrefix + "." + fileof(pathname);
         // cerr << "attrsFileName for " << pathname << " is " << attrsFN << endl;
         return attrsFN;
@@ -97,7 +97,7 @@ private:
         if (lstat(pathname.c_str(), &buf) == -1) {
             cerr << "Expected directory or file \"" << pathname << "\" does not exist." << endl;
         }
-        DIRFILE dt = S_ISDIR(buf.st_mode) ? DIR : FILE;
+        DIRFILE dt = S_ISDIR(buf.st_mode) ? DIRECTORY : FILE;
         return dt;
     }
 
@@ -184,7 +184,7 @@ private:
 
     void emu_creat_mkdir(Reply &repl, const string &pathname, DIRFILE dt, mode_t mode, uid_t uid, gid_t gid) {
         Attrs a, dirA;
-        if (readAttrs(dirof(pathname), DIR, &dirA) == -1)
+        if (readAttrs(dirof(pathname), DIRECTORY, &dirA) == -1)
             return;
         a.mode = mode & ATTR_MASK;
         a.uid  = uid;

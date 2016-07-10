@@ -3,6 +3,10 @@
 #include <string>
 #include "erlent/local.hh"
 
+extern "C" {
+#include <dirent.h>
+}
+
 using namespace std;
 
 const string erlent::LocalRequestProcessor::emuPrefix = ".erlent";
@@ -167,7 +171,7 @@ int erlent::LocalRequestProcessor::do_process(Request &req) {
             mkdirreq->setMode(dirmode);
             mkdirreq->performLocally();
             if (repl.getResult() == 0)
-                emu_creat_mkdir(repl, *pathname, DIR, origMode, mkdirreq->getUid(), mkdirreq->getGid());
+                emu_creat_mkdir(repl, *pathname, DIRECTORY, origMode, mkdirreq->getUid(), mkdirreq->getGid());
         } else if (linkreq != nullptr) {
             linkreq->performLocally();
             if (repl.getResult() == 0) {
@@ -195,7 +199,7 @@ int erlent::LocalRequestProcessor::do_process(Request &req) {
             if (garepl.getResult() == 0) {
                 Attrs a;
                 struct stat *buf = garepl.getStbuf();
-                DIRFILE dt = S_ISDIR(buf->st_mode) ? DIR : FILE;
+                DIRFILE dt = S_ISDIR(buf->st_mode) ? DIRECTORY : FILE;
                 if (readAttrs(*pathname, dt, &a) == 0) {
                     buf->st_uid = uid2outer(a.uid);
                     buf->st_gid = gid2outer(a.gid);
@@ -209,6 +213,22 @@ int erlent::LocalRequestProcessor::do_process(Request &req) {
                     buf->st_uid = 0;
                     buf->st_gid = 0;
                     buf->st_mode = buf->st_mode & ~(S_IRWXG | S_IRWXO);
+                }
+                if (dt == DIRECTORY) {
+                    // Correct the st_size field for directories.
+                    // (st_size is the number of files/dirs in
+                    // the directory; we must not count the
+                    // emulation files)
+                    struct dirent *ent;
+                    DIR *dir = opendir(pathname->c_str());
+                    if (dir != NULL) {
+                        buf->st_size = 0;
+                        while ((ent = readdir(dir)) != NULL) {
+                            if (!isEmuFile(ent->d_name))
+                                ++buf->st_size;
+                        }
+                        closedir(dir);
+                    }
                 }
             }
         } else if (readdirreq != nullptr) {
@@ -224,11 +244,11 @@ int erlent::LocalRequestProcessor::do_process(Request &req) {
             // the attributes file first but save its contents in case
             // the rmdir fails.
             Attrs a;
-            readAttrs(rmdirreq->getPathname(), DIR, &a);
-            unlink(attrsFileName(rmdirreq->getPathname(), DIR).c_str());
+            readAttrs(rmdirreq->getPathname(), DIRECTORY, &a);
+            unlink(attrsFileName(rmdirreq->getPathname(), DIRECTORY).c_str());
             rmdirreq->performLocally();
             if (repl.getResult() != 0)
-                writeAttrs(rmdirreq->getPathname(), DIR, &a);
+                writeAttrs(rmdirreq->getPathname(), DIRECTORY, &a);
         } else if (renamereq != nullptr) {
             renamereq->performLocally();
             if (repl.getResult() == 0) {
