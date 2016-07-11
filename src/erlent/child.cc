@@ -287,15 +287,21 @@ int uidmap_single(pid_t child_pid, uid_t new_uid, gid_t new_gid) {
     sprintf(str, "/proc/%d/setgroups", child_pid);
     fd = open(str, O_WRONLY);
     if (fd == -1) {
-        perror("open /proc/.../setgroups");
-        return -1;
+        // when the "setgroups" file does not exist
+        // (because we are on an old kernel),
+        // do not complain.
+        if (errno != ENOENT) {
+            perror("open /proc/.../setgroups");
+            return -1;
+        }
+    } else {
+        sprintf(str, "deny");
+        if (write(fd, str, strlen(str)) == -1) {
+            perror("write setgroups");
+            return -1;
+        }
+        close(fd);
     }
-    sprintf(str, "deny");
-    if (write(fd, str, strlen(str)) == -1) {
-        perror("write setgroups");
-        return -1;
-    }
-    close(fd);
 
     sprintf(str, "/proc/%d/uid_map", child_pid);
     fd = open(str, O_WRONLY);
