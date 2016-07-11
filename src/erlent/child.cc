@@ -170,8 +170,7 @@ static int childFunc(ChildParams params)
     }
     setgroups(0, NULL);
 
-    if (isatty(0)) {
-        char slave[200];
+    if (isatty(0) && params.devprocsys) { // need /dev/pts
         pid_t p;
         struct winsize ws;
         struct termios oldsettings;
@@ -191,7 +190,7 @@ static int childFunc(ChildParams params)
         // any more to wait for).
         signal(SIGCHLD, SIG_DFL);
 
-        p = forkpty(&amaster, slave, &oldsettings, &ws);
+        p = forkpty(&amaster, NULL, &oldsettings, &ws);
         if (p == -1) {
             int err = errno;
             cerr << "forkpty failed: " << strerror(err) << endl;
