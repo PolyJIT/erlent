@@ -118,8 +118,12 @@ static int childFunc(ChildParams params)
 
     if (params.devprocsys) {
         mnt("proc", "/proc", "proc");
-        mnt("erlentpts", "/dev/pts", "devpts", MS_NOSUID | MS_NOEXEC, "newinstance,ptmxmode=0666,gid=5");
-        mnt("/dev/pts/ptmx", "/dev/ptmx", NULL, MS_BIND);
+        gid_t ttygid = 5;
+        if (params.existsGidMapping(ttygid)) {
+            string ptsopt = "newinstance,ptmxmode=0666,gid=" + to_string(ttygid);
+            mnt("erlentpts", "/dev/pts", "devpts", MS_NOSUID | MS_NOEXEC, ptsopt.c_str());
+            mnt("/dev/pts/ptmx", "/dev/ptmx", NULL, MS_BIND);
+        }
     }
 #if 0
     chdir(params.newRoot.c_str());
@@ -503,4 +507,13 @@ unsigned long ChildParams::inverseLookupID(unsigned long outer, const std::vecto
             return outer - it->outerID + it->innerID;
     }
     return 65534; // nobody / nogroup
+}
+
+bool ChildParams::existsGidMapping(gid_t inner) const
+{
+    for (const Mapping &m : gidMappings) {
+        if (m.innerID <= inner && inner < m.innerID+m.count)
+            return true;
+    }
+    return false;
 }

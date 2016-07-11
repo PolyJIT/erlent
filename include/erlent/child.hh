@@ -44,6 +44,7 @@ public:
     gid_t lookupGID(gid_t inner) const { return lookupID(inner, gidMappings); }
     uid_t inverseLookupUID(uid_t outer) const { return inverseLookupID(outer, uidMappings); }
     gid_t inverseLookupGID(gid_t outer) const { return inverseLookupID(outer, gidMappings); }
+    bool existsGidMapping(gid_t inner) const;
 
 };
 
