@@ -159,7 +159,7 @@ static int childFunc(ChildParams params)
         cerr << "setreuid failed: " << strerror(err) << endl;
         exit(1);
     }
-    if (setregid(params.initialUID, params.initialGID) == -1) {
+    if (setregid(params.initialGID, params.initialGID) == -1) {
         int err = errno;
         cerr << "setregid failed: " << strerror(err) << endl;
         exit(1);
