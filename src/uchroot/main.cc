@@ -90,6 +90,9 @@ bool parseBind(const string &str, string &first, string &second) {
         return false;
     first  = str.substr(0, pos);
     second = str.substr(pos+1);
+    // Paths must be absolute
+    if (first.find('/') != 0 || second.find('/') != 0)
+        return false;
     return true;
 }
 
@@ -103,8 +106,8 @@ static void usage(const char *progname)
          << "   -r DIR        new root directory" << endl
          << "   -w DIR        change working directory to DIR after changing root" << endl
          << "   -C            set up /dev, /proc and /sys inside the new root" << endl
-         << "   -M DIR:MNTPT  map DIR (from host) to MNTPT in new root with uid/gid mapping" << endl
-         << "   -m DIR:MNTPT  bind mount DIR (from host) to MNTPT in new root" << endl
+         << "   -M SRC:TGT    map SRC (from host) to TGT in new root with uid/gid mapping" << endl
+         << "   -m SRC:MNTPT  bind mount SRC (from host) to MNTPT in new root" << endl
          << "   -E            emulate file owner and access mode through FUSE" << endl
          << "   -u UID        run CMD with this real and effective user  id (default: 0)" << endl
          << "   -g GID        run CMD with this real and effective group id (default: 0)" << endl
@@ -114,6 +117,8 @@ static void usage(const char *progname)
          << "   -d            print a few debug messages" << endl
          << "   -h            print this help" << endl
          << "   CMD ARGS...   command to execute and its arguments" << endl
+         << endl
+         << "   SRC, TGT and MNTPT must be absolute paths." << endl
          << endl;
 }
 
