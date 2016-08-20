@@ -73,6 +73,29 @@ static void mnt(const char *src, const char *dst, const char *fstype, int flags=
     }
 }
 
+static void exec_child(char *const argv[]) __attribute__ ((noreturn));
+
+// Run the child process (after resetting signal handling)
+static void exec_child(char *const args[]) {
+    // Reset signal handlers and unblock them
+    // in case they are blocked (e.g., by the
+    // FUSE parent process).
+    signal(SIGTERM, SIG_DFL);
+    signal(SIGINT,  SIG_DFL);
+    signal(SIGHUP,  SIG_DFL);
+
+    sigset_t sigs;
+    sigemptyset(&sigs);
+    sigaddset(&sigs, SIGTERM);
+    sigaddset(&sigs, SIGINT);
+    sigaddset(&sigs, SIGHUP);
+    sigprocmask(SIG_UNBLOCK, &sigs, NULL);
+    execvp(args[0], args);
+    int err = errno;
+    cerr << "Could not execute '" << args[0] << "': " << strerror(err) << endl;
+    exit(127);
+}
+
 // Handler for PTY resize (SIGWINCH).
 int amaster;  // master device of child's PTY
 static void sigwinch_action(int sig, siginfo_t *, void *) {
@@ -196,10 +219,7 @@ static int childFunc(ChildParams params)
             cerr << "forkpty failed: " << strerror(err) << endl;
             exit(127);
         } else if (p == 0) {
-            execvp(args[0], args);
-            int err = errno;
-            cerr << "Could not execute '" << args[0] << "': " << strerror(err) << endl;
-            exit(127);
+            exec_child(args);  // never returns
         } else {
             // cerr << "slave device: " << slave << endl;
 
@@ -270,10 +290,7 @@ static int childFunc(ChildParams params)
             exit(res);
         }
     } else { // stdin is not a terminal
-        execvp(args[0], args);
-        int err = errno;
-        cerr << "Could not execute '" << args[0] << "': " << strerror(err) << endl;
-        return 127;
+        exec_child(args);  // never returns
     }
 }
 
