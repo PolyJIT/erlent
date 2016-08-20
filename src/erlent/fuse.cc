@@ -275,8 +275,8 @@ static void *erlent_init(struct fuse_conn_info *conn)
 
 // The user command sends SIGCHLD when it exits.
 // The receiver is the FUSE process (it has started
-// the user command as its child). Send SIGTERM to the
-// FUSE process to terminate the it.
+// the user command as its child).
+// Call fuse_exit() to terminate the file system.
 static void sigchld_action(int signum, siginfo_t *si, void *ctx)
 {
     int status;
@@ -288,7 +288,7 @@ static void sigchld_action(int signum, siginfo_t *si, void *ctx)
 
     child_res = WIFEXITED(status) ? WEXITSTATUS(status) : 127;
 
-    kill(fuse_pid, SIGTERM);
+    fuse_exit(fuse_get_context()->fuse);
 }
 
 int erlent_fuse(RequestProcessor &rp, char *const *cmdArgs_, const ChildParams &params_)
