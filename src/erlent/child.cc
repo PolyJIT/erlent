@@ -203,6 +203,12 @@ static int childFunc(ChildParams params)
         } else {
             // cerr << "slave device: " << slave << endl;
 
+            // Exit only when the communication channel
+            // closes (or on SIGKILL).
+            signal(SIGTERM, SIG_IGN);
+            signal(SIGINT, SIG_IGN);
+            signal(SIGHUP, SIG_IGN);
+
             // Install handler for terminal resizes.
             struct sigaction sact;
             memset(&sact, 0, sizeof(sact));
@@ -448,6 +454,13 @@ void erlent::run_child() {
 // return exit status of pid p
 int erlent::wait_for_pid(pid_t p) {
     int status;
+
+    // We want to exit only when we receive
+    // SIGCHLD (or SIGKILL).
+    signal(SIGTERM, SIG_IGN);
+    signal(SIGINT, SIG_IGN);
+    signal(SIGHUP, SIG_IGN);
+
     while (waitpid(p, &status, 0) == -1) {
     }
     int ex;
