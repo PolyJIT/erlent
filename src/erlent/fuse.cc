@@ -8,6 +8,7 @@ extern "C" {
 #include "erlent/child.hh"
 #include "erlent/erlent.hh"
 #include "erlent/fuse.hh"
+#include "erlent/signalrelay.hh"
 
 using namespace erlent;
 
@@ -268,6 +269,7 @@ static char *const *cmdArgs;
 static void *erlent_init(struct fuse_conn_info *conn)
 {
     child_pid = setup_child(cmdArgs, params);
+    install_signal_relay(child_pid, { SIGTERM, SIGINT, SIGHUP, SIGQUIT });
     if (child_pid != -1)
         run_child();
     return 0;

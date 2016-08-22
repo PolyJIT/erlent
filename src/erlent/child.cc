@@ -10,6 +10,7 @@ extern "C" {
 
 #include "erlent/child.hh"
 #include "erlent/erlent.hh"
+#include "erlent/signalrelay.hh"
 
 #include <sstream>
 
@@ -83,12 +84,14 @@ static void exec_child(char *const args[]) {
     signal(SIGTERM, SIG_DFL);
     signal(SIGINT,  SIG_DFL);
     signal(SIGHUP,  SIG_DFL);
+    signal(SIGQUIT, SIG_DFL);
 
     sigset_t sigs;
     sigemptyset(&sigs);
     sigaddset(&sigs, SIGTERM);
     sigaddset(&sigs, SIGINT);
     sigaddset(&sigs, SIGHUP);
+    sigaddset(&sigs, SIGQUIT);
     sigprocmask(SIG_UNBLOCK, &sigs, NULL);
     execvp(args[0], args);
     int err = errno;
@@ -223,11 +226,8 @@ static int childFunc(ChildParams params)
         } else {
             // cerr << "slave device: " << slave << endl;
 
-            // Exit only when the communication channel
-            // closes (or on SIGKILL).
-            signal(SIGTERM, SIG_IGN);
-            signal(SIGINT, SIG_IGN);
-            signal(SIGHUP, SIG_IGN);
+            // Forward some signals to child
+            install_signal_relay(p, { SIGTERM, SIGINT, SIGHUP, SIGQUIT });
 
             // Install handler for terminal resizes.
             struct sigaction sact;
@@ -472,11 +472,8 @@ void erlent::run_child() {
 int erlent::wait_for_pid(pid_t p) {
     int status;
 
-    // We want to exit only when we receive
-    // SIGCHLD (or SIGKILL).
-    signal(SIGTERM, SIG_IGN);
-    signal(SIGINT, SIG_IGN);
-    signal(SIGHUP, SIG_IGN);
+    // Forward some signals to child
+    install_signal_relay(p, { SIGTERM, SIGINT, SIGHUP, SIGQUIT });
 
     while (waitpid(p, &status, 0) == -1) {
     }

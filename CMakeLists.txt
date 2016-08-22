@@ -14,6 +14,7 @@ add_library(erlent
   src/erlent/erlent.cc
   src/erlent/fuse.cc
   src/erlent/local.cc
+  src/erlent/signalrelay.cc
 )
 
 add_executable(erlent-server src/server/main.cc)
