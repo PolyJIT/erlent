@@ -100,5 +100,6 @@ int main(int argc, char *argv[])
         params.uidMappings.push_back(Mapping(euid, euid, 1));
     if (params.gidMappings.empty())
         params.gidMappings.push_back(Mapping(egid, egid, 1));
-    return erlent_fuse(reqproc, args, params);
+    cerr << "IMPLEMENTATION INCOMPLETE" << endl;
+    return 127; //erlent_fuse(reqproc, args, params);
 }

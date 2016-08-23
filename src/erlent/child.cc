@@ -2,6 +2,7 @@ extern "C" {
 #include <fcntl.h>
 #include <grp.h>
 #include <pty.h>
+#include <sys/mman.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
@@ -113,11 +114,16 @@ static void sigwinch_action(int sig, siginfo_t *, void *) {
 
 static char *const *args;
 extern int pivot_root(const char * new_root,const char * put_old);
-static int childFunc(ChildParams params)
+
+static char *newroot;
+
+static int childFunc(const ChildParams &params)
 {
     wait_parent('I');
 
-    dbg() << "newroot = " << params.newRoot << endl;
+    string root(newroot);
+
+    // cerr << "newroot = " << params.newRoot << endl;
     dbg() << "newwd = " << params.newWorkDir << endl;
     dbg() << "command = ";
     for (char *const *p=args; *p; ++p) {
@@ -128,15 +134,14 @@ static int childFunc(ChildParams params)
     // make newRoot a mount point so we can use pivot_root later
 //    mnt(params.newRoot.c_str(), params.newRoot.c_str(), MS_BIND | MS_REC);
     if (params.devprocsys) {
-        const string &root = params.newRoot;
         mnt("/dev", (root+"/dev").c_str(), NULL, MS_BIND | MS_REC);
         mnt("/sys", (root+"/sys").c_str(), NULL, MS_BIND | MS_REC);
     }
     for (const pair<string,string> &b : params.bindMounts) {
-        mnt(b.first.c_str(), (params.newRoot+"/"+b.second).c_str(), NULL, MS_BIND | MS_REC);
+        mnt(b.first.c_str(), (root+"/"+b.second).c_str(), NULL, MS_BIND | MS_REC);
     }
 
-    if (chroot(params.newRoot.c_str()) == -1) {
+    if (chroot(root.c_str()) == -1) {
         int err = errno;
         cerr << "chroot failed: " << strerror(err) << endl;
         exit(1);
@@ -227,7 +232,7 @@ static int childFunc(ChildParams params)
             // cerr << "slave device: " << slave << endl;
 
             // Forward some signals to child
-            install_signal_relay(p, { SIGTERM, SIGINT, SIGHUP, SIGQUIT });
+            install_signal_relay({p}, { SIGTERM, SIGINT, SIGHUP, SIGQUIT });
 
             // Install handler for terminal resizes.
             struct sigaction sact;
@@ -286,7 +291,7 @@ static int childFunc(ChildParams params)
                 }
             }
             tcsetattr(0, TCSANOW, &oldsettings);
-            int res = wait_for_pid(p);
+            int res = wait_for_pid(p, {p});
             exit(res);
         }
     } else { // stdin is not a terminal
@@ -377,7 +382,7 @@ int do_idmap(const char *cmd, pid_t child_pid, const std::vector<Mapping> &mappi
         execv(argv[0], argv);
         exit(127);
     } else if (pid > 0) {
-        res = wait_for_pid(pid);
+        res = wait_for_pid(pid, {pid});
     } else if (pid < 0) {
         cerr << "fork failed" << endl;
         res = 127;
@@ -405,18 +410,18 @@ int uidmap_sub(pid_t child_pid, const ChildParams &params) {
     return 0;
 }
 
-static int child_res;
-
 pid_t erlent::setup_child(char *const *cmdArgs,
-                  const ChildParams &params)
+                          ChildParams params)
 {
     pid_t child_pid = 0;
 
     args = cmdArgs;
 
+    newroot = (char *) mmap(NULL, sizeof(*newroot)*256, PROT_READ | PROT_WRITE,
+                            MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+
     initComm();
 
-    child_res = 127;
     child_pid = fork();
     if (child_pid == -1)
         return -1;
@@ -433,7 +438,7 @@ pid_t erlent::setup_child(char *const *cmdArgs,
         } else if (p == 0)
             childFunc(params);
         else {
-            exit(wait_for_pid(p));
+            exit(wait_for_pid(p, {p}));
         }
     }
     close(toparent[1]);
@@ -464,18 +469,34 @@ pid_t erlent::setup_child(char *const *cmdArgs,
     return child_pid;
 }
 
-void erlent::run_child() {
+void erlent::run_child(const string &newRoot) {
+    strncpy(newroot, newRoot.c_str(), 255);
+    newroot[256] = '\0';
     signal_child('I');
 }
 
-// return exit status of pid p
-int erlent::wait_for_pid(pid_t p) {
+// Wait for process with PID 'p' to exit. While waiting,
+// forward termination signals to the PIDs in 'forward_to'.
+int erlent::wait_for_pid(pid_t p, const initializer_list<pid_t> &forward_to) {
     int status;
 
     // Forward some signals to child
-    install_signal_relay(p, { SIGTERM, SIGINT, SIGHUP, SIGQUIT });
+    install_signal_relay(forward_to, { SIGTERM, SIGINT, SIGHUP, SIGQUIT });
 
+    FORK_DEBUG { cerr << "process " << getpid() << " waiting for pid " << p << endl; }
     while (waitpid(p, &status, 0) == -1) {
+        int err = errno;
+        switch (err) {
+        case EINTR: continue;
+        case ECHILD:
+            FORK_DEBUG {
+                cerr << "in process " << getpid() << ": child " << p << " has vanished" << endl;
+            }
+            return 0;
+        default:
+            cerr << "waitpid failed: " << strerror(err) << endl;
+            return 255;
+        }
     }
     int ex;
     if (WIFEXITED(status))
@@ -484,6 +505,7 @@ int erlent::wait_for_pid(pid_t p) {
         ex = 128 + WTERMSIG(status);
     else
         ex = 255;
+    FORK_DEBUG { cerr << "process " << getpid() << ": child " << p << " exited with " << ex << endl; }
     return ex;
 }
 

@@ -5,6 +5,9 @@
 #include <utility>
 #include <vector>
 
+#define FORK_DEBUG while(0)
+// #define FORK_DEBUG if(0){}else
+
 extern "C" {
 #include <sys/types.h>
 }
@@ -24,7 +27,6 @@ public:
 
 class ChildParams {
 public:
-    std::string newRoot = "/";
     std::string newWorkDir = "/";
     bool devprocsys = false;
     std::vector<std::pair<std::string,std::string>> bindMounts;
@@ -48,9 +50,9 @@ public:
 
 };
 
-pid_t setup_child(char *const *args, const ChildParams &params);
-void run_child();
-int wait_for_pid(pid_t p);
+pid_t setup_child(char *const *args, ChildParams params);
+void run_child(const std::string &newRoot);
+int wait_for_pid(pid_t p, const std::initializer_list<pid_t> &forward_to);
 
 }
 

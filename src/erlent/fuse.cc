@@ -1,6 +1,7 @@
 #define FUSE_USE_VERSION 30
 extern "C" {
 #include <fuse.h>
+#include <fuse/fuse_lowlevel.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 }
@@ -8,7 +9,6 @@ extern "C" {
 #include "erlent/child.hh"
 #include "erlent/erlent.hh"
 #include "erlent/fuse.hh"
-#include "erlent/signalrelay.hh"
 
 using namespace erlent;
 
@@ -214,21 +214,28 @@ static void errExit(const char *msg)
 
 static void cleanup()
 {
+    // Waiting for child processes seems to be
+    // superfluous and incorrect (hangs).
+    // The file system is already unmounted
+    // when cleanup() is called (fuse_teardown()
+    // seems to ensure this).
+#if 0
     // Wait for all remaining child processes (fuse may have
     // started "fusermount -u -z" or similar).
     pid_t pid;
     int status;
 
-    dbg() << "A" << endl;
+    cerr << "A" << endl;
     while ((pid = wait(&status)) != -1) {
     }
-    dbg() << "B" << endl;
+    cerr << "B" << endl;
     // When there are no more child processes, errno is set
     // to ECHILD.
     if (errno != ECHILD) {
         int err = errno;
         cerr << "Error in wait: " << strerror(err) << "endl";
     }
+#endif
     cleanup_tempdir();
 }
 
@@ -257,46 +264,31 @@ static void cleanup_tempdir() {
         } else
             tries = 0;
     } while (tries > 0);
-    // rmdir(tempdir);
 }
 
-
-static pid_t child_pid = 0, fuse_pid = 0;
-static int child_res = 0;
-static ChildParams params;
-static char *const *cmdArgs;
 
 static void *erlent_init(struct fuse_conn_info *conn)
 {
-    child_pid = setup_child(cmdArgs, params);
-    install_signal_relay(child_pid, { SIGTERM, SIGINT, SIGHUP, SIGQUIT });
-    if (child_pid != -1)
-        run_child();
+    run_child(newroot);
     return 0;
 }
 
-// The user command sends SIGCHLD when it exits.
-// The receiver is the FUSE process (it has started
-// the user command as its child).
-// Call fuse_exit() to terminate the file system.
-static void sigchld_action(int signum, siginfo_t *si, void *ctx)
+static fuse_session *fuse_instance;
+static pid_t child_pid;
+
+// When the FUSE process receives a TERM, INT, HUP
+// or QUIT signal, call fuse_exit() to terminate
+// the file system.
+static void endsig_hdl(int signum)
 {
-    int status;
-    dbg() << "sigchld_action" << endl;
-    waitpid(si->si_pid, &status, 0);
-
-    if (si->si_pid != child_pid)
-        return;
-
-    child_res = WIFEXITED(status) ? WEXITSTATUS(status) : 127;
-
-    fuse_exit(fuse_get_context()->fuse);
+    FORK_DEBUG { cerr << "fuse received signal " << signum << ", forwarding to " << child_pid << endl; }
+    kill(child_pid, signum);
+    fuse_session_exit(fuse_instance);
 }
 
-int erlent_fuse(RequestProcessor &rp, char *const *cmdArgs_, const ChildParams &params_)
+pid_t erlent_fuse(pid_t child_pid, RequestProcessor &rp)
 {
-    cmdArgs = cmdArgs_;
-    params = params_;
+    ::child_pid = child_pid;
     reqproc = &rp;
 
     char tempdirtempl[] = "/tmp/erlent.root.XXXXXX";
@@ -316,15 +308,6 @@ int erlent_fuse(RequestProcessor &rp, char *const *cmdArgs_, const ChildParams &
     }
     */
     dbg() << "Running on " << hostname << ", new root: " << newroot << endl;
-
-    struct sigaction sact;
-    memset(&sact, 0, sizeof(sact));
-    sact.sa_sigaction = sigchld_action;
-    sact.sa_flags = SA_NOCLDSTOP | SA_SIGINFO;
-    if (sigaction(SIGCLD, &sact, 0) == -1)
-        errExit("sigaction");
-
-    params.newRoot = newroot;
 
     struct fuse_operations erlent_oper;
     memset(&erlent_oper, 0, sizeof(erlent_oper));
@@ -351,35 +334,60 @@ int erlent_fuse(RequestProcessor &rp, char *const *cmdArgs_, const ChildParams &
     erlent_oper.statfs   = erlent_statfs;
     erlent_oper.init     = erlent_init;
 
-    fuse_pid = fork();
+    pid_t fuse_pid = fork();
     if (fuse_pid == -1)
         errExit("fork/fuse");
     else if (fuse_pid == 0) {
-        // the SIGCHLD signal handler needs to know the PID
-        fuse_pid = getpid();
+        signal(SIGCHLD, SIG_DFL);
+
+        initializer_list<int> signals = { SIGTERM, SIGINT, SIGHUP, SIGQUIT };
+        sigset_t sigset;
+        sigemptyset(&sigset);
+        for (int sig : signals)
+            sigaddset(&sigset, sig);
+        sigprocmask(SIG_BLOCK, &sigset, NULL);
+
         char *fuse_args[] = {
-            strdup("erlent-fuse"), strdup("-f"), //strdup("-s"),
+            strdup("erlent-fuse"), strdup("-f"), strdup("-s"),
             strdup("-o"), strdup("auto_unmount"),
             strdup("-o"), strdup("allow_other"),
             strdup("-o"), strdup("default_permissions"),
-            //strdup("-d"),
             strdup(newroot.c_str())
         };
         int fuse_argc = sizeof(fuse_args)/sizeof(*fuse_args);
 
-        // The child signals its exit code to this process,
-        // so return child_res in case FUSE terminates correctly.
-        int fuse_err = fuse_main(fuse_argc, fuse_args, &erlent_oper, NULL);
-        exit(fuse_err != 0 ? fuse_err : child_res);
+        int fuse_err;
+
+        int multi;
+        char *mountpt;
+        struct fuse *fuse;
+        fuse = fuse_setup(fuse_argc, fuse_args, &erlent_oper, sizeof(erlent_oper),
+                          &mountpt, &multi, NULL);
+        if (!fuse) {
+            cerr << "Could not set up FUSE filesystem" << endl;
+            exit(127);
+        }
+        fuse_instance = fuse_get_session(fuse);
+
+        struct sigaction sact;
+        memset(&sact, 0, sizeof(sact));
+        sact.sa_handler = endsig_hdl;
+        for (int sig : signals) {
+            if (sigaction(sig, &sact, 0) == -1)
+                errExit("sigaction");
+        }
+        sigprocmask(SIG_UNBLOCK, &sigset, NULL);
+
+        if (multi)
+            fuse_err = fuse_loop_mt(fuse);
+        else
+            fuse_err = fuse_loop(fuse);
+
+        fuse_teardown(fuse, mountpt);
+
+        cleanup();
+        exit(fuse_err);
     }
 
-    // wait for the FUSE process to end
-    // "child_res" is not meaningful in this process because
-    // the process "fuse_pid" has the child process as its child
-    // (and gets its exit code).
-    int res = wait_for_pid(fuse_pid);
-
-    cleanup();
-
-    return res;
+    return fuse_pid;
 }

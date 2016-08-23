@@ -6,7 +6,7 @@
 
 namespace erlent {
 
-void install_signal_relay(pid_t child, std::initializer_list<int> signals);
+void install_signal_relay(std::initializer_list<pid_t> children, std::initializer_list<int> signals);
 
 }
 

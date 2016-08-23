@@ -23,6 +23,7 @@ extern "C" {
 #include "erlent/erlent.hh"
 #include "erlent/fuse.hh"
 #include "erlent/local.hh"
+#include "erlent/signalrelay.hh"
 
 using namespace std;
 using namespace erlent;
@@ -215,28 +216,39 @@ int main(int argc, char *argv[])
         args[i] = argv[i+usercmd];
     args[n_args] = 0;
 
-    int exitcode;
+    struct sigaction sact;
+    memset(&sact, 0, sizeof(sact));
+    sact.sa_sigaction = sigchld_action;
+    sact.sa_flags = SA_NOCLDSTOP | SA_SIGINFO;
+    if (sigaction(SIGCLD, &sact, 0) == -1) {
+        perror("sigaction");
+        exit(1);
+    }
+
+    child_pid = setup_child(args, params);
+    FORK_DEBUG {
+        cerr << "parent is " << getpid() << endl
+             << "child_pid is " << child_pid << endl;
+    }
+
+    pid_t fuse_pid = 0;
     if (withfuse) {
-        // params.newRoot is set by erlent_fuse
         reqproc.addPathMapping(LocalRequestProcessor::AttrType::Emulated, "/", chrootDir);
         reqproc.setParams(params);
-        exitcode = erlent_fuse(reqproc, args, params);
+        // run_child() is called by erlent_fuse()
+        fuse_pid = erlent_fuse(child_pid, reqproc);
+        FORK_DEBUG { cerr << "fuse pid is " << fuse_pid << endl; }
     } else {
-        params.newRoot = chrootDir;
-
-        struct sigaction sact;
-        memset(&sact, 0, sizeof(sact));
-        sact.sa_sigaction = sigchld_action;
-        sact.sa_flags = SA_NOCLDSTOP | SA_SIGINFO;
-        if (sigaction(SIGCLD, &sact, 0) == -1) {
-            perror("sigaction");
-            exit(1);
-        }
-
-        child_pid = setup_child(args, params);
-        run_child();
-        exitcode = wait_for_pid(child_pid);
+        run_child(chrootDir);
     }
+
+    int exitcode = wait_for_pid(child_pid, {child_pid, fuse_pid});
+    if (fuse_pid != 0) {
+        FORK_DEBUG { cerr << "signaling fuse process " << fuse_pid << endl; }
+        kill(fuse_pid, SIGTERM);
+        wait_for_pid(fuse_pid, {});
+    }
+
     return exitcode;
 }
 

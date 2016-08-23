@@ -4,9 +4,10 @@
 #include "erlent/child.hh"
 #include "erlent/erlent.hh"
 
+#include <string>
+
 #include <sys/types.h>
 
-int erlent_fuse(erlent::RequestProcessor &rp,
-                char *const *cmdArgs_, const erlent::ChildParams &params_);
+pid_t erlent_fuse(pid_t child_pid, erlent::RequestProcessor &rp);
 
 #endif // _ERLENT_FUSE_HH
