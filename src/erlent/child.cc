@@ -69,8 +69,10 @@ static void mnt(const char *src, const char *dst, const char *fstype, int flags=
     int res = mount(src, dst, fstype, flags, options);
     if (res == -1) {
         int err = errno;
-        cerr << "Mount of '" << src << "' at '" << dst << "' (type " << fstype
-             << ") failed: " << strerror(err) << endl;
+        cerr << "Mount of '" << src << "' at '" << dst;
+        if (fstype)
+            cerr << "' (type " << fstype << ")";
+        cerr << " failed: " << strerror(err) << endl;
         exit(1);
     }
 }
