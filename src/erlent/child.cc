@@ -149,6 +149,8 @@ static int childFunc(const ChildParams &params)
         exit(1);
     }
 
+    signal_parent('C');
+
     if (params.devprocsys) {
         mnt("proc", "/proc", "proc");
         gid_t ttygid = 5;
@@ -475,6 +477,38 @@ void erlent::run_child(const string &newRoot) {
     strncpy(newroot, newRoot.c_str(), 255);
     newroot[256] = '\0';
     signal_child('I');
+}
+
+// Wait until the child has performed chroot()
+void erlent::wait_child_chroot() {
+    wait_child('C');
+}
+
+// Try to remove the temporary directory early.
+// Since the child has a separate mount namespace,
+// we can unmount the fuse filesystem in the parent
+// (at least when /dev is mounted in the child; it is
+// unclear why it only works with a bind mount for /dev)
+// and remove the temporary directory.
+void erlent::parent_fuse_preclean() {
+    char *const args[] = {
+        strdup("/bin/fusermount"), strdup("-u"),
+        strdup("-q"), newroot, NULL };
+    int res = 0;
+    pid_t pid = fork();
+    if (pid == 0) {
+        execv(args[0], args);
+        exit(127);
+    } else
+        res = wait_for_pid(pid, {});
+    if (res == 0) {
+        if (rmdir(newroot) == -1) {
+            int err = errno;
+            dbg() << "Cound not remove temporary directory '"
+                  << newroot << "': " << strerror(err) << endl;
+        }
+    } else
+        dbg() << "Could not unmount fuse filesystem: " << res << endl;
 }
 
 // Wait for process with PID 'p' to exit. While waiting,

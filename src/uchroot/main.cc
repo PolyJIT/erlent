@@ -241,6 +241,9 @@ int main(int argc, char *argv[])
     } else {
         run_child(chrootDir);
     }
+    wait_child_chroot();
+    if (withfuse)
+        parent_fuse_preclean();
 
     int exitcode = wait_for_pid(child_pid, {child_pid, fuse_pid});
     if (fuse_pid != 0) {

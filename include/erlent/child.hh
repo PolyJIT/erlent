@@ -52,6 +52,8 @@ public:
 
 pid_t setup_child(char *const *args, ChildParams params);
 void run_child(const std::string &newRoot);
+void wait_child_chroot();
+void parent_fuse_preclean();
 int wait_for_pid(pid_t p, const std::initializer_list<pid_t> &forward_to);
 
 }

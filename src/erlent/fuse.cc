@@ -255,7 +255,9 @@ static void cleanup_tempdir() {
         if (res == -1) {
             err = errno;
             --tries;
-            if (err == EBUSY && tries > 0) {
+            if (err == ENOENT) // parent_fuse_preclean() has removed the directory already
+                break;
+            else if (err == EBUSY && tries > 0) {
                 usleep(10000);
             } else {
                 cerr << "Could not remove '" << newroot << "': " << strerror(err) << "." << endl;
@@ -270,6 +272,10 @@ static void cleanup_tempdir() {
 static void *erlent_init(struct fuse_conn_info *conn)
 {
     run_child(newroot);
+    // We cannot call wait_child_chroot() here, because
+    // the mount operations before the chroot() call in
+    // the child require filesystem operations
+    // (on the file system we would block here).
     return 0;
 }
 
