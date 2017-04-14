@@ -432,7 +432,12 @@ pid_t erlent::setup_child(char *const *cmdArgs,
     else if (child_pid == 0) {
         close(toparent[0]);
         close(tochild[1]);
-        unshare(CLONE_NEWUSER | CLONE_NEWPID | CLONE_NEWNS);
+        int res = unshare(CLONE_NEWUSER | CLONE_NEWPID | CLONE_NEWNS);
+        if (res == -1) {
+            int err = errno;
+            cerr << "unshare failed: " << strerror(err) << endl;
+            exit(127);
+        }
 
         signal_parent('U');
         pid_t p = fork();
