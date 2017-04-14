@@ -30,8 +30,7 @@ using namespace erlent;
 
 static pid_t child_pid = 0;
 
-extern "C"
-void sigchld_action(int signum, siginfo_t *si, void *ctx)
+static void sigchld_action(int signum, siginfo_t *si, void *ctx)
 {
     int status;
     waitpid(si->si_pid, &status, 0);

@@ -114,6 +114,17 @@ static void sigwinch_action(int sig, siginfo_t *, void *) {
     }
 }
 
+// The pid wait_for_pid is waiting for
+static int pid_to_wait_for = -1;
+
+// Handler for SIGCHLD in child processs
+static void sigchld_action(int signum, siginfo_t *si, void *ctx)
+{
+    int status;
+    if (si->si_pid != pid_to_wait_for)
+        waitpid(si->si_pid, &status, 0);
+}
+
 static char *const *args;
 extern int pivot_root(const char * new_root,const char * put_old);
 
@@ -219,11 +230,23 @@ static int childFunc(const ChildParams &params)
             exit(127);
         }
 
+        // Do not consume the exit status of this process
+        // in the signal handler for SIGCHLD;
+        pid_to_wait_for = getpid();
+
         // Make sure the signal handler for
         // SIGCHLD is _not_ SIG_IGN because in this case
         // waitpid can fail with ECHLD (there is no child
-        // any more to wait for).
-        signal(SIGCHLD, SIG_DFL);
+        // any more to wait for). To avoid zombie/defunct
+        // processes, we need to handle SIGCHLD signals.
+        struct sigaction sact;
+        memset(&sact, 0, sizeof(sact));
+        sact.sa_sigaction = sigchld_action;
+        sact.sa_flags = SA_NOCLDSTOP | SA_SIGINFO;
+        if (sigaction(SIGCHLD, &sact, 0) == -1) {
+            perror("sigaction");
+            exit(127);
+        }
 
         p = forkpty(&amaster, NULL, &oldsettings, &ws);
         if (p == -1) {
@@ -520,6 +543,8 @@ void erlent::parent_fuse_preclean() {
 // forward termination signals to the PIDs in 'forward_to'.
 int erlent::wait_for_pid(pid_t p, const initializer_list<pid_t> &forward_to) {
     int status;
+
+    pid_to_wait_for = p;
 
     // Forward some signals to child
     install_signal_relay(forward_to, { SIGTERM, SIGINT, SIGHUP, SIGQUIT });
