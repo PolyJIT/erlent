@@ -108,6 +108,7 @@ static void usage(const char *progname)
          << "   -C            set up /dev, /proc and /sys inside the new root" << endl
          << "   -M SRC:TGT    map SRC (from host) to TGT in new root with uid/gid mapping" << endl
          << "   -m SRC:MNTPT  bind mount SRC (from host) to MNTPT in new root" << endl
+         << "   -n            unshare network namespace" << endl
          << "   -E            emulate file owner and access mode through FUSE" << endl
          << "   -u UID        run CMD with this real and effective user  id (default: 0)" << endl
          << "   -g GID        run CMD with this real and effective group id (default: 0)" << endl
@@ -140,7 +141,7 @@ int main(int argc, char *argv[])
     params.initialUID = 0;
     params.initialGID = 0;
 
-    while ((opt = getopt(argc, argv, "+r:w:CEM:m:u:g:U:G:Adh")) != -1) {
+    while ((opt = getopt(argc, argv, "+r:w:CEM:m:nu:g:U:G:Adh")) != -1) {
         switch(opt) {
         case 'r': chrootDir = optarg; break;
         case 'w': params.newWorkDir = optarg; break;
@@ -160,6 +161,7 @@ int main(int argc, char *argv[])
                 return 1;
             }
             break;
+        case 'n': params.unshareNet = true; break;
         case 'E': withfuse = true; break;
         case 'u': params.initialUID = atol(optarg); break;
         case 'g': params.initialGID = atol(optarg); break;

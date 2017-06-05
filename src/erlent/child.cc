@@ -455,7 +455,10 @@ pid_t erlent::setup_child(char *const *cmdArgs,
     else if (child_pid == 0) {
         close(toparent[0]);
         close(tochild[1]);
-        int res = unshare(CLONE_NEWUSER | CLONE_NEWPID | CLONE_NEWNS);
+        int flags = CLONE_NEWUSER | CLONE_NEWPID | CLONE_NEWNS;
+        if (params.unshareNet)
+            flags |= CLONE_NEWNET;
+        int res = unshare(flags);
         if (res == -1) {
             int err = errno;
             cerr << "unshare failed: " << strerror(err) << endl;

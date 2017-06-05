@@ -29,6 +29,7 @@ class ChildParams {
 public:
     std::string newWorkDir = "/";
     bool devprocsys = false;
+    bool unshareNet = false;
     std::vector<std::pair<std::string,std::string>> bindMounts;
 
     std::vector<Mapping> uidMappings;
