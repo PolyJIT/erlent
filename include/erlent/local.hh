@@ -49,6 +49,11 @@ private:
     static const string emuPrefix;
     static const mode_t ATTR_MASK = S_ISUID | S_ISGID | S_ISVTX | S_IRWXU | S_IRWXG | S_IRWXO;
 
+    // Armin Groesslinger 2017-06-14:
+    // HACK: 040 is the (non-standand) FMODE_EXEC flag on linux;
+    // it seems, we should not pass FMODE_EXEC to open on NFSv4.
+    static const int ALLOWED_OPEN_FLAGS_MASK = ~040;
+
     enum DIRFILE {
         DIRECTORY = 1, FILE = 2
     };

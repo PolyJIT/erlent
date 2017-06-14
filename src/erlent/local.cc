@@ -139,6 +139,11 @@ int erlent::LocalRequestProcessor::do_process(Request &req) {
             dbg() << "performing request on '" << *pathname << "'" << endl;
         }
 
+        OpenRequest *openreq = dynamic_cast<OpenRequest *>(&req);
+        if (openreq != nullptr) {
+            openreq->setFlags(openreq->getFlags() & ALLOWED_OPEN_FLAGS_MASK);
+        }
+
         UidGid *ug = dynamic_cast<UidGid *>(&req);
         if (ug != nullptr) {
             ug->setUid(uid2inner(ug->getUid()));
