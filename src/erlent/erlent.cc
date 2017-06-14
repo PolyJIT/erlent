@@ -401,8 +401,8 @@ void OpenRequest::deserialize(istream &is)
 void OpenRequest::performLocally()
 {
     int res = 0;
-    int fd = open(getPathname().c_str(), flags, mode);
-    if (fd < 0)
+    int fd = open(getPathname().c_str(), flags, getMode());
+    if (fd == -1)
         res = -errno;
     else
         close(fd);

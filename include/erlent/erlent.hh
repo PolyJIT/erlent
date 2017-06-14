@@ -393,7 +393,6 @@ namespace erlent {
 
     class OpenRequest : public RequestWithPathnameTempl<OpenReply,Message::OPEN>, public Mode {
         int flags;
-        mode_t mode;
     public:
         OpenRequest() { }
         OpenRequest(const char *pathname, int flags)
