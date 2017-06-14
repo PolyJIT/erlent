@@ -67,7 +67,7 @@ static int erlent_readlink(const char *path, char *result, size_t size) {
 
 static int erlent_open(const char *path, struct fuse_file_info *fi)
 {
-    dbg() << "erlent_open for '" << path << "'." << endl;
+    dbg() << "erlent_open for '" << path << "' with flags=0" << fi->flags << "." << endl;
     OpenRequest req(path, fi->flags);
     req.setMode(0);
     return reqproc->process(req);
