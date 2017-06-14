@@ -398,7 +398,8 @@ namespace erlent {
         OpenRequest(const char *pathname, int flags)
             : RequestWithPathnameTempl(pathname), flags(flags) { }
 
-        int getFlags() const   { return flags; }
+        int getFlags() const     { return flags; }
+        void setFlags(int flags) { this->flags = flags; }
 
         void serialize(std::ostream &os) const;
         void deserialize(std::istream &is);
