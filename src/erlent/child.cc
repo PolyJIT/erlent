@@ -81,7 +81,16 @@ static void wait_parent(char expected) {
 
 static void mnt(const char *src, const char *dst, const char *fstype, int flags=0,
          const char *options=NULL, ErrorCode retcode=ErrorCode::MNT_FAILED) {
-    int res = mount(src, dst, fstype, flags, options);
+    int res;
+    // The mount of /proc sometimes fails with EINVAL, so retry
+    // the mount in case of EINVAL after a small delay.
+    for (int i=0; i<3; ++i) {
+        res = mount(src, dst, fstype, flags, options);
+        if (res == -1 && errno == EINVAL)
+            usleep(50000);
+        else
+            break;
+    }
     if (res == -1) {
         int err = errno;
         cerr << "Mount of '" << src << "' at '" << dst;
