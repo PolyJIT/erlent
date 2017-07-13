@@ -33,10 +33,13 @@ static pid_t child_pid = 0;
 static void sigchld_action(int signum, siginfo_t *si, void *ctx)
 {
     int status;
-    waitpid(si->si_pid, &status, 0);
 
-    if (si->si_pid != child_pid)
+    // do not consume the exit status of the child process
+    // because the main program needs it
+    if (si->si_pid == child_pid)
         return;
+
+    waitpid(si->si_pid, &status, 0);
 
     dbg() << "sigchld_action: child process exited" << endl;
 }

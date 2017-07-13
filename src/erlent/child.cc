@@ -2,6 +2,7 @@ extern "C" {
 #include <fcntl.h>
 #include <grp.h>
 #include <pty.h>
+#include <semaphore.h>
 #include <sys/mman.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
@@ -17,6 +18,20 @@ extern "C" {
 
 using namespace std;
 using namespace erlent;
+
+// create a semaphore shared with child processes
+static sem_t *create_semaphore(int initial_value) {
+    sem_t *s;
+    s = (sem_t *) mmap(NULL, sizeof(*s), PROT_READ | PROT_WRITE,
+                       MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    if (s == NULL) {
+        cerr << "Could not create semaphore" << endl;
+        exit(1);
+    }
+
+    sem_init(s, 1 /*shared*/, initial_value);
+    return s;
+}
 
 int tochild[2], toparent[2];
 
@@ -121,6 +136,11 @@ static int pid_to_wait_for = -1;
 static void sigchld_action(int signum, siginfo_t *si, void *ctx)
 {
     int status;
+    FORK_DEBUG {
+        cerr << "sigchld_action in process " << getpid()
+             << " for child " << si->si_pid << endl;
+    }
+
     if (si->si_pid != pid_to_wait_for)
         waitpid(si->si_pid, &status, 0);
 }
@@ -130,6 +150,10 @@ extern int pivot_root(const char * new_root,const char * put_old);
 
 static char *newroot;
 
+// childFunc MUST use fork in any case,
+// either using forkpty() or ordinary fork(); otherwise,
+// unsharing the PID namespace does not work.
+// The function can return the exit code or call exit().
 static int childFunc(const ChildParams &params)
 {
     wait_parent('I');
@@ -166,7 +190,8 @@ static int childFunc(const ChildParams &params)
     signal_parent('C');
 
     if (params.devprocsys) {
-        mnt("proc", "/proc", "proc", 0, nullptr, MNT_PROC_FAILED);
+        // proc can only be mounted after we fork (due to the change in
+        // the view to the process IDs, so we mount it below
         gid_t ttygid = 5;
         if (params.existsGidMapping(ttygid)) {
             string ptsopt = "newinstance,ptmxmode=0666,gid=" + to_string(ttygid);
@@ -220,10 +245,25 @@ static int childFunc(const ChildParams &params)
     }
     setgroups(0, NULL);
 
-    if (isatty(0) && params.devprocsys) { // need /dev/pts
-        pid_t p;
-        struct winsize ws;
-        struct termios oldsettings;
+    // Make sure the signal handler for
+    // SIGCHLD is _not_ SIG_IGN because in this case
+    // waitpid can fail with ECHLD (there is no child
+    // any more to wait for). To avoid zombie/defunct
+    // processes, we need to handle SIGCHLD signals.
+    struct sigaction sact;
+    memset(&sact, 0, sizeof(sact));
+    sact.sa_sigaction = sigchld_action;
+    sact.sa_flags = SA_NOCLDSTOP | SA_SIGINFO;
+    if (sigaction(SIGCHLD, &sact, 0) == -1) {
+        perror("sigaction");
+        exit(127);
+    }
+
+    bool ptyEmu = isatty(0) && params.devprocsys;  // need /dev/pts
+    struct termios oldsettings;
+    struct winsize ws;
+
+    if (ptyEmu) {
         if (tcgetattr(0, &oldsettings) == -1) {
             int err = errno;
             cerr << "tcgetattr failed: " << strerror(err) << endl;
@@ -233,101 +273,106 @@ static int childFunc(const ChildParams &params)
             cerr << "TIOCGWINSZ error" << endl;
             exit(127);
         }
+    }
 
-        // Do not consume the exit status of this process
-        // in the signal handler for SIGCHLD;
-        pid_to_wait_for = getpid();
+    sem_t *sema = create_semaphore(0);
+    pid_t p;
+    if (ptyEmu)
+        p = forkpty(&amaster, NULL, &oldsettings, &ws);
+    else
+        p = fork();
 
-        // Make sure the signal handler for
-        // SIGCHLD is _not_ SIG_IGN because in this case
-        // waitpid can fail with ECHLD (there is no child
-        // any more to wait for). To avoid zombie/defunct
-        // processes, we need to handle SIGCHLD signals.
+    if (p == -1) {
+        int err = errno;
+        cerr << "fork[pty] failed: " << strerror(err) << endl;
+        exit(127);
+    } else if (p == 0) {
+        if (params.devprocsys)
+            mnt("proc", "/proc", "proc", 0, nullptr, MNT_PROC_FAILED);
+        sem_wait(sema);
+        exec_child(args);  // never returns
+    }
+
+    // Do not consume the exit status of this process
+    // in the signal handler for SIGCHLD;
+    pid_to_wait_for = p;
+
+    // Forward some signals to child
+    install_signal_relay({p}, { SIGTERM, SIGINT, SIGHUP, SIGQUIT });
+
+    if (ptyEmu) {
+        // cerr << "slave device: " << slave << endl;
+
+        // Install handler for terminal resizes.
         struct sigaction sact;
         memset(&sact, 0, sizeof(sact));
-        sact.sa_sigaction = sigchld_action;
-        sact.sa_flags = SA_NOCLDSTOP | SA_SIGINFO;
-        if (sigaction(SIGCHLD, &sact, 0) == -1) {
-            perror("sigaction");
+        sact.sa_sigaction = sigwinch_action;
+        sact.sa_flags = SA_SIGINFO;
+        sigaction(SIGWINCH, &sact, NULL);
+
+        struct termios settings;
+        // Set RAW mode on slave side of PTY
+        settings = oldsettings;
+        cfmakeraw(&settings);
+        if (tcsetattr(0, TCSANOW, &settings) < 0) {
+            int err = errno;
+            cerr << "tcsetattr failed: " << strerror(err) << endl;
             exit(127);
         }
+    }
 
-        p = forkpty(&amaster, NULL, &oldsettings, &ws);
-        if (p == -1) {
-            int err = errno;
-            cerr << "forkpty failed: " << strerror(err) << endl;
-            exit(127);
-        } else if (p == 0) {
-            exec_child(args);  // never returns
-        } else {
-            // cerr << "slave device: " << slave << endl;
+    sem_post(sema); // run child
 
-            // Forward some signals to child
-            install_signal_relay({p}, { SIGTERM, SIGINT, SIGHUP, SIGQUIT });
+    if (ptyEmu) {
+        bool quit = false;
+        while (!quit) {
+            char input[256];
+            fd_set fd_in;
 
-            // Install handler for terminal resizes.
-            struct sigaction sact;
-            memset(&sact, 0, sizeof(sact));
-            sact.sa_sigaction = sigwinch_action;
-            sact.sa_flags = SA_SIGINFO;
-            sigaction(SIGWINCH, &sact, NULL);
+            FD_ZERO(&fd_in);
+            FD_SET(0, &fd_in);
+            FD_SET(amaster, &fd_in);
 
-            struct termios settings;
-            // Set RAW mode on slave side of PTY
-            settings = oldsettings;
-            cfmakeraw(&settings);
-            if (tcsetattr(0, TCSANOW, &settings) < 0) {
+            int rc;
+            do {
+                rc = select(amaster + 1, &fd_in, NULL, NULL, NULL);
+            } while (rc == -1 && errno == EINTR);
+
+            if (rc == -1) {
                 int err = errno;
-                cerr << "tcsetattr failed: " << strerror(err) << endl;
+                cerr << "select failed: " << strerror(err) << endl;
+                tcsetattr(0, TCSANOW, &oldsettings);
                 exit(127);
             }
 
-            bool quit = false;
-            while (!quit) {
-                char input[256];
-                fd_set fd_in;
-
-                FD_ZERO(&fd_in);
-                FD_SET(0, &fd_in);
-                FD_SET(amaster, &fd_in);
-
-                int rc;
-                do {
-                    rc = select(amaster + 1, &fd_in, NULL, NULL, NULL);
-                } while (rc == -1 && errno == EINTR);
-
-                if (rc == -1) {
-                    int err = errno;
-                    cerr << "select failed: " << strerror(err) << endl;
-                    tcsetattr(0, TCSANOW, &oldsettings);
-                    exit(127);
-                }
-
-                if (FD_ISSET(0, &fd_in)) {
-                    rc = read(0, input, sizeof(input));
-                    if (rc > 0) {
-                        if (write(amaster, input, rc) == -1)
-                            quit = true;
-                    } else if (rc <= 0)
+            if (FD_ISSET(0, &fd_in)) {
+                rc = read(0, input, sizeof(input));
+                if (rc > 0) {
+                    if (write(amaster, input, rc) == -1)
                         quit = true;
-                }
-
-                if (FD_ISSET(amaster, &fd_in)) {
-                    rc = read(amaster, input, sizeof(input));
-                    if (rc > 0) {
-                        if (write(1, input, rc) == -1)
-                            quit = true;
-                    } else if (rc <= 0)
-                        quit = true;
-                }
+                } else if (rc <= 0)
+                    quit = true;
             }
-            tcsetattr(0, TCSANOW, &oldsettings);
-            int res = wait_for_pid(p, {p});
-            exit(res);
+
+            if (FD_ISSET(amaster, &fd_in)) {
+                rc = read(amaster, input, sizeof(input));
+                if (rc > 0) {
+                    if (write(1, input, rc) == -1)
+                        quit = true;
+                } else if (rc <= 0)
+                    quit = true;
+            }
         }
-    } else { // stdin is not a terminal
-        exec_child(args);  // never returns
+        tcsetattr(0, TCSANOW, &oldsettings);
     }
+
+    int res = wait_for_pid(p, {p});
+    FORK_DEBUG {
+        cerr << "child helper (" << getpid() << ") got exit status "
+             << res << "from child (" << p << ")" << endl;
+    }
+
+    return res;
 }
 
 static void initComm() {
@@ -470,15 +515,7 @@ pid_t erlent::setup_child(char *const *cmdArgs,
         }
 
         signal_parent('U');
-        pid_t p = fork();
-        if (p == -1) {
-            cerr << "fork (in child) failed." << endl;
-            exit(127);
-        } else if (p == 0)
-            childFunc(params);
-        else {
-            exit(wait_for_pid(p, {p}));
-        }
+        exit(childFunc(params));
     }
     close(toparent[1]);
     close(tochild[0]);
