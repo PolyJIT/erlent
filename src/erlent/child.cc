@@ -65,7 +65,7 @@ static void wait_parent(char expected) {
 
 
 static void mnt(const char *src, const char *dst, const char *fstype, int flags=0,
-         const char *options=NULL) {
+         const char *options=NULL, ErrorCode retcode=ErrorCode::MNT_FAILED) {
     int res = mount(src, dst, fstype, flags, options);
     if (res == -1) {
         int err = errno;
@@ -73,7 +73,7 @@ static void mnt(const char *src, const char *dst, const char *fstype, int flags=
         if (fstype)
             cerr << "' (type " << fstype << ")";
         cerr << " failed: " << strerror(err) << endl;
-        exit(1);
+        exit(retcode);
     }
 }
 
@@ -147,11 +147,14 @@ static int childFunc(const ChildParams &params)
     // make newRoot a mount point so we can use pivot_root later
 //    mnt(params.newRoot.c_str(), params.newRoot.c_str(), MS_BIND | MS_REC);
     if (params.devprocsys) {
-        mnt("/dev", (root+"/dev").c_str(), NULL, MS_BIND | MS_REC);
-        mnt("/sys", (root+"/sys").c_str(), NULL, MS_BIND | MS_REC);
+        mnt("/dev", (root + "/dev").c_str(), nullptr, MS_BIND | MS_REC, nullptr,
+            MNT_DEV_FAILED);
+        mnt("/sys", (root + "/sys").c_str(), nullptr, MS_BIND | MS_REC, nullptr,
+            MNT_SYS_FAILED);
     }
     for (const pair<string,string> &b : params.bindMounts) {
-        mnt(b.first.c_str(), (root+"/"+b.second).c_str(), NULL, MS_BIND | MS_REC);
+        mnt(b.first.c_str(), (root + "/" + b.second).c_str(), nullptr,
+            MS_BIND | MS_REC, nullptr, MNT_FAILED);
     }
 
     if (chroot(root.c_str()) == -1) {
@@ -163,11 +166,12 @@ static int childFunc(const ChildParams &params)
     signal_parent('C');
 
     if (params.devprocsys) {
-        mnt("proc", "/proc", "proc");
+        mnt("proc", "/proc", "proc", 0, nullptr, MNT_PROC_FAILED);
         gid_t ttygid = 5;
         if (params.existsGidMapping(ttygid)) {
             string ptsopt = "newinstance,ptmxmode=0666,gid=" + to_string(ttygid);
-            mnt("erlentpts", "/dev/pts", "devpts", MS_NOSUID | MS_NOEXEC, ptsopt.c_str());
+            mnt("erlentpts", "/dev/pts", "devpts", MS_NOSUID | MS_NOEXEC,
+                ptsopt.c_str(), MNT_PTS_FAILED);
             mnt("/dev/pts/ptmx", "/dev/ptmx", NULL, MS_BIND);
         }
     }

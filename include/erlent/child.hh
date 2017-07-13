@@ -14,6 +14,14 @@ extern "C" {
 
 namespace erlent {
 
+enum ErrorCode {
+    MNT_FAILED      = 0xFF,
+    MNT_PROC_FAILED = 0xFE,
+    MNT_DEV_FAILED  = 0xFD,
+    MNT_SYS_FAILED  = 0xFC,
+    MNT_PTS_FAILED  = 0xFB
+};
+
 class Mapping {
 public:
     unsigned long innerID;
