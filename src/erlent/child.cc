@@ -83,11 +83,12 @@ static void mnt(const char *src, const char *dst, const char *fstype, int flags=
          const char *options=NULL, ErrorCode retcode=ErrorCode::MNT_FAILED) {
     int res;
     // The mount of /proc sometimes fails with EINVAL, so retry
-    // the mount in case of EINVAL after a small delay.
-    for (int i=0; i<3; ++i) {
+    // the mount in case of EINVAL after a delay. It has been observed
+    // that a delay of a few seconds is likely to suffice.
+    for (int i=0; i<5; ++i) {
         res = mount(src, dst, fstype, flags, options);
         if (res == -1 && errno == EINVAL)
-            usleep(50000);
+            usleep(1000*1000);
         else
             break;
     }
