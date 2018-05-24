@@ -87,9 +87,10 @@ static void mnt(const char *src, const char *dst, const char *fstype, int flags=
     // that a delay of a few seconds is likely to suffice.
     for (int i=0; i<5; ++i) {
         res = mount(src, dst, fstype, flags, options);
-        if (res == -1 && errno == EINVAL)
+        if (res == -1 && errno == EINVAL) {
+            dbg() << "Mounting /proc failed with EINVAL, retrying." << endl;
             usleep(1000*1000);
-        else
+        } else
             break;
     }
     if (res == -1) {
