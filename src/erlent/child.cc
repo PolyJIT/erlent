@@ -200,9 +200,29 @@ static int childFunc(const ChildParams &params)
 
     signal_parent('C');
 
+    // We have to fork to make the child become
+    // PID 1 in the new PID namespace.
+    // The mount for /proc cannot be done in the parent
+    // process, we must do it from a child process (e.g.,
+    // the new PID 1).
+    pid_t pid1 = fork();
+    if (pid1 == -1) {
+        cerr << "Could not fork PID 1" << endl;
+        exit(127);
+    } else if (pid1 > 0) {
+        // Just wait for PID 1 and return its exit status.
+        // Mounting /proc, etc. should be done from PID 1
+        // (or one of its children) as not all operations
+        // (e.g., mounting /proc) seem to be possible from
+        // the parent of PID 1.
+        return wait_for_pid(pid1, {pid1});
+    }
+
+    // From here, we are PID 1 in the new PID namespace;
+    // therefore, we should not 'return' from this function
+    // but call 'exit()' to quit.
+
     if (params.devprocsys) {
-        // proc can only be mounted after we fork (due to the change in
-        // the view to the process IDs, so we mount it below
         gid_t ttygid = 5;
         if (params.existsGidMapping(ttygid)) {
             string ptsopt = "newinstance,ptmxmode=0666,gid=" + to_string(ttygid);
@@ -210,6 +230,7 @@ static int childFunc(const ChildParams &params)
                 ptsopt.c_str(), MNT_PTS_FAILED);
             mnt("/dev/pts/ptmx", "/dev/ptmx", NULL, MS_BIND);
         }
+        mnt("proc", "/proc", "proc", 0, nullptr, MNT_PROC_FAILED);
     }
 #if 0
     chdir(params.newRoot.c_str());
@@ -298,8 +319,6 @@ static int childFunc(const ChildParams &params)
         cerr << "fork[pty] failed: " << strerror(err) << endl;
         exit(127);
     } else if (p == 0) {
-        if (params.devprocsys)
-            mnt("proc", "/proc", "proc", 0, nullptr, MNT_PROC_FAILED);
         sem_wait(sema);
         exec_child(args);  // never returns
     }
@@ -383,6 +402,11 @@ static int childFunc(const ChildParams &params)
              << res << "from child (" << p << ")" << endl;
     }
 
+    // We are PID 1, so we call exit() to signal our
+    // return code. (The 'return' is just there to silence
+    // warnings if the compiler does not know that exit()
+    // never returns.)
+    exit(res);
     return res;
 }
 
