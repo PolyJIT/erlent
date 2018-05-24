@@ -171,7 +171,6 @@ static int childFunc(const ChildParams &params)
 
     string root(newroot);
 
-    // cerr << "newroot = " << params.newRoot << endl;
     dbg() << "newwd = " << params.newWorkDir << endl;
     dbg() << "command = ";
     for (char *const *p=args; *p; ++p) {
@@ -179,8 +178,6 @@ static int childFunc(const ChildParams &params)
     }
     dbg() << endl;
 
-    // make newRoot a mount point so we can use pivot_root later
-//    mnt(params.newRoot.c_str(), params.newRoot.c_str(), MS_BIND | MS_REC);
     if (params.devprocsys) {
         mnt("/dev", (root + "/dev").c_str(), nullptr, MS_BIND | MS_REC, nullptr,
             MNT_DEV_FAILED);
@@ -232,38 +229,12 @@ static int childFunc(const ChildParams &params)
         }
         mnt("proc", "/proc", "proc", 0, nullptr, MNT_PROC_FAILED);
     }
-#if 0
-    chdir(params.newRoot.c_str());
-    if (syscall(__NR_pivot_root, ".", "./mnt") == -1) {
-        int err = errno;
-        cerr << "pivot_root failed: " << strerror(err) << endl;
-        exit(1);
-    }
-    chdir("/");
-#endif
+
     if (chdir(params.newWorkDir.c_str()) == -1) {
         int err = errno;
         cerr << "chdir failed: " << strerror(err) << endl;
         exit(1);
     }
-
-#if 0
-    cerr << "cwd = " << get_current_dir_name() << endl;
-
-    DIR *d = opendir("/");
-    struct dirent *de;
-    while ((de = readdir(d)) != NULL) {
-        cerr << de->d_name << endl;
-    }
-    closedir(d);
-#endif
-
-#if 0
-    if (dup2(2, 1) == -1) {
-        int err = errno;
-        cerr << "dup2 failed: " << strerror(err) << endl;
-    }
-#endif
 
     if (setreuid(params.initialUID, params.initialUID) == -1) {
         int err = errno;
