@@ -340,6 +340,12 @@ pid_t erlent_fuse(pid_t child_pid, RequestProcessor &rp)
     erlent_oper.statfs   = erlent_statfs;
     erlent_oper.init     = erlent_init;
 
+    // By default, FUSE does not pass calls to utimensat() with UTIME_NOW or UTIME_OMIT
+    // to the filesystem implementation. We set the following flag to get calls
+    // with these special values also (otherwise, time stamps set by "tar", for example,
+    // do not work as "tar" uses UTIME_OMIT).
+    erlent_oper.flag_utime_omit_ok = 1;
+
     pid_t fuse_pid = fork();
     if (fuse_pid == -1)
         errExit("fork/fuse");
